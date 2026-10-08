@@ -46,6 +46,8 @@ def seviyeden(el_turu: str, seviye: int = 1) -> tuple[int, int]:
 
 @dataclass(frozen=True)
 class PuanSonucu:
+    """Bir elin puan sonucu: el türü, puanlayan kartlar, chips, mult, skor, belirsizlik ve isteğe bağlı adım adım kayıt.
+    """
     el_turu: str
     puanlayan: tuple[int, ...]
     chips: float
@@ -94,6 +96,7 @@ def puan_hesapla(
     adimlar: list[tuple[str, float, float]] = []
 
     def kayit(ad: str) -> None:
+        """Adım kaydı açıksa şimdiki chips ve mult değerini açıklamayla listeye ekler."""
         if adim_kaydi:
             adimlar.append((ad, chips, mult))
 

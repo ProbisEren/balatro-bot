@@ -23,11 +23,14 @@ KART_ALANLARI = ("hand", "jokers", "consumables", "shop", "vouchers", "packs", "
 
 
 def _kapali_mi(kart: dict[str, Any]) -> bool:
+    """Kartın yüzü kapalı mı (`state.hidden`)."""
     durum = kart.get("state")
     return isinstance(durum, dict) and bool(durum.get("hidden"))
 
 
 def _kapali_karti_maskele(alan: dict[str, Any]) -> None:
+    """Bir kart alanındaki yüzü kapalı kartların kimliğini siler, yalnızca 'kapalı' bilgisini bırakır.
+    """
     kartlar = alan.get("cards")
     if not isinstance(kartlar, list):
         return

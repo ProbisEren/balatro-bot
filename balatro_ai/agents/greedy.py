@@ -25,6 +25,8 @@ MAKS_ADAY = 12  # tam motorla yeniden değerlendirilen en iyi discard kümesi sa
 
 
 class GreedyAjan:
+    """Greedy ajan: eldeki tüm oynanışları puan motoruyla hesaplayıp en iyisini oynar; gerekirse Monte Carlo ile discard eder.
+    """
     tur = "greedy"
 
     def __init__(self, tohum: int, ornek: int = 40, ornek_tam: int = 8):
@@ -36,6 +38,7 @@ class GreedyAjan:
         self.son_aciklama: dict[str, Any] = {}
 
     def bilgi(self) -> dict[str, Any]:
+        """Run kaydındaki `ajan` alanına yazılacak kimlik ve ayar bilgisini döndürür."""
         return {
             "tur": self.tur, "model_id": None, "rng_tohumu": self.tohum,
             "ornek": self.ornek, "ornek_tam": self.ornek_tam, "maks_aday": MAKS_ADAY,
@@ -92,6 +95,8 @@ class GreedyAjan:
         }
 
         def bitir(a: int, karar: str) -> int | None:
+            """Kararı ve açıklamasını kaydeder; seçilen aksiyon geçerli değilse None döner (çağıran sabit kurala düşer).
+            """
             aciklama["karar"] = karar
             self.son_aciklama = aciklama
             return a if a in gecerli else None
@@ -136,6 +141,8 @@ class GreedyAjan:
         zor = boss is not None or not (hizli_uygun_mu(el) and hizli_uygun_mu(deste))
 
         def olc(tut_listesi, cekilenler_listesi, skor_fn):
+            """Bir tutma kümesi için çekilişler üzerinden ortalama en iyi skoru ve blind'ı geçme oranını hesaplar.
+            """
             toplam, gecen = 0.0, 0
             for cekilen in cekilenler_listesi:
                 s = skor_fn(tut_listesi + cekilen)
@@ -152,6 +159,8 @@ class GreedyAjan:
             sonuc.append({"at": c, "beklenen": ort, "gecme": p})
 
         def metrik(x):
+            """Küme sıralama ölçütü: son elde (geçme olasılığı, beklenen skor), diğer ellerde (beklenen skor, geçme olasılığı).
+            """
             return (x["gecme"], x["beklenen"]) if son_el else (x["beklenen"], x["gecme"])
 
         sonuc.sort(key=metrik, reverse=True)
@@ -179,6 +188,8 @@ class GreedyAjan:
 
     @staticmethod
     def _tam_en_iyi(kartlar: list[Kart], degerler, boss) -> int:
+        """Verilen kartlardan oynanabilecek en yüksek skoru TAM puan motoruyla bulur (boss debuff'ı ve geliştirilmiş kartlar için; yavaş).
+        """
         en = 0
         n = len(kartlar)
         for c in aksiyonlar.KOMBINASYONLAR:

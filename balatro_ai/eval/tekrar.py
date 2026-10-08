@@ -21,6 +21,7 @@ ATILAN_ALANLAR = frozenset({"id"})
 
 
 def normallestir(o: Any) -> Any:
+    """Durumdan oturuma özgü `id` alanlarını atar (karşılaştırmanın anlamlı olması için)."""
     if isinstance(o, dict):
         return {k: normallestir(v) for k, v in o.items() if k not in ATILAN_ALANLAR}
     if isinstance(o, list):
@@ -29,6 +30,7 @@ def normallestir(o: Any) -> Any:
 
 
 def ilk_fark(a: Any, b: Any, yol: str = "") -> tuple[str, Any, Any] | None:
+    """İki iç içe yapı arasındaki ilk farkın yolunu ve iki değerini döndürür; aynıysa None."""
     if type(a) is not type(b):
         return (yol or "/", a, b)
     if isinstance(a, dict):
@@ -51,11 +53,14 @@ def ilk_fark(a: Any, b: Any, yol: str = "") -> tuple[str, Any, Any] | None:
 
 
 def oku(dosya: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Bir run kaydını okur: ilk satır (run_basi) ve karar kayıtları."""
     satirlar = [json.loads(s) for s in Path(dosya).read_text(encoding="utf-8").splitlines()]
     return satirlar[0], [s for s in satirlar if s["tip"] == "karar"]
 
 
 def tekrar_oynat(istemci: Any, dosya: str | Path, **ortam_ayarlari: Any) -> dict[str, Any]:
+    """Kayıtlı run'ı aynı seed ve aynı aksiyonlarla oynatıp her adımda durumun kayıttakiyle aynı olduğunu denetler.
+    """
     basi, kararlar = oku(dosya)
     kume = next((k["ek"].get("kume") for k in kararlar if k["ek"].get("kume")), "dar")
     env = BalatroOrtami(istemci, kume=kume, **ortam_ayarlari)
@@ -84,6 +89,7 @@ def tekrar_oynat(istemci: Any, dosya: str | Path, **ortam_ayarlari: Any) -> dict
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Komut satırı girişi: bir run kaydını yeniden oynatıp sonucu yazdırır."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("dosya")
     args = ap.parse_args(argv)

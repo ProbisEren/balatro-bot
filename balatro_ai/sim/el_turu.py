@@ -21,6 +21,7 @@ EL_TURLERI = (
 
 @dataclass(frozen=True)
 class Degerlendirme:
+    """Bir elin tespit sonucu: el türü, puanlayan kart indeksleri ve elin içerdiği türler."""
     el_turu: str
     puanlayan: tuple[int, ...]  # oynanan kartlar içindeki indeksler (oynama sırasında)
     iceren: frozenset[str]  # elin içerdiği türler (jokerlerin "contains" koşulları için)
@@ -36,6 +37,7 @@ def grup_sayisi(kartlar: list[tuple[int, Kart]], n: int) -> list[list[int]]:
 
 
 def _flush(kartlar: list[tuple[int, Kart]], dort_parmak: bool) -> list[int]:
+    """Flush'ı oluşturan kart indekslerini döndürür (yoksa boş liste)."""
     gerekli = 4 if dort_parmak else 5
     if len(kartlar) > 5 or len(kartlar) < gerekli:
         return []
@@ -47,6 +49,8 @@ def _flush(kartlar: list[tuple[int, Kart]], dort_parmak: bool) -> list[int]:
 
 
 def _straight(kartlar: list[tuple[int, Kart]], dort_parmak: bool, kisayol: bool) -> list[int]:
+    """Straight'i oluşturan kart indekslerini döndürür; As düşük/yüksek, Shortcut ve Four Fingers dahil (yoksa boş).
+    """
     gerekli = 4 if dort_parmak else 5
     if len(kartlar) > 5 or len(kartlar) < gerekli:
         return []
@@ -79,6 +83,7 @@ def _straight(kartlar: list[tuple[int, Kart]], dort_parmak: bool, kisayol: bool)
 
 
 def _en_yuksek(kartlar: list[tuple[int, Kart]]) -> list[int]:
+    """High Card için en yüksek kartın indeksini döndürür (Stone kartlar seçilmez)."""
     if not kartlar:
         return []
     return [max(kartlar, key=lambda ik: ik[1].en_yuksek_anahtari)[0]]

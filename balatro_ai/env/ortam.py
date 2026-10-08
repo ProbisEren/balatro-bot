@@ -53,7 +53,7 @@ def _durum_imzasi(durum: dict[str, Any]) -> tuple:
 
 
 class OrtamHatasi(Exception):
-    pass
+    """Ortamın kendi hatası: oyun beklenmedik bir fazda, geçerli aksiyon kalmadı gibi durumlar."""
 
 
 class GecersizAksiyon(OrtamHatasi):
@@ -61,6 +61,8 @@ class GecersizAksiyon(OrtamHatasi):
 
 
 class BalatroOrtami(gym.Env):
+    """Gymnasium ortamı: gerçek oyunu (BalatroBot) bota insan gözlemi ve aksiyon kimlikleriyle sunar, her komutu loglar.
+    """
     metadata: ClassVar[dict[str, Any]] = {"render_modes": []}
 
     def __init__(
@@ -84,6 +86,8 @@ class BalatroOrtami(gym.Env):
         yerlesme_sn: float = 0.6,
         yerlesme_en_cok_sn: float = 8.0,
     ):
+        """Ortamı kurar: istemci, aksiyon kümesi (dar/tam), log klasörü, ajan bilgisi ve zamanlama ayarları.
+        """
         if kume not in aksiyonlar.KUMELER:
             raise ValueError(f"Bilinmeyen aksiyon kümesi: {kume}")
         super().__init__()
@@ -157,6 +161,8 @@ class BalatroOrtami(gym.Env):
         return self._gozlem(), self._bilgi()
 
     def step(self, aksiyon: int):
+        """Ajanın seçtiği aksiyonu oyunda uygular; ödülü hesaplar, sabit kural aşamalarını geçer, bitişte run'ı kapatır.
+        """
         if self._log is None and self.log_kok is not None:
             raise OrtamHatasi("Run açık değil, önce reset() çağır")
         bot_ms = (time.monotonic() - self._son_gozlem_zamani) * 1000
@@ -189,6 +195,7 @@ class BalatroOrtami(gym.Env):
         return self._gozlem(), odul, sonlandi, kesildi, self._bilgi(gecersiz=gecersiz)
 
     def close(self) -> None:
+        """Açık bir run varsa `iptal` olarak kapatır."""
         self._run_kapat("iptal")
 
     # ------------------------------------------------------------------ yardımcılar
@@ -196,6 +203,8 @@ class BalatroOrtami(gym.Env):
         return insan_gozlemi(self._durum)
 
     def _gecerli(self) -> list[int]:
+        """O anki durumda geçerli aksiyon kimlikleri (oyunun reddedenleri hariç, öğrenilmiş hedef sayılarıyla).
+        """
         return aksiyonlar.gecerli(
             self._durum, self.kume, frozenset(self._engelli), self._hedef_gereksinimi
         )
@@ -208,6 +217,7 @@ class BalatroOrtami(gym.Env):
             self._hedef_gereksinimi[m.group(1)] = (en_az, int(m.group(3) or en_az))
 
     def _bilgi(self, gecersiz: bool = False) -> dict[str, Any]:
+        """Ajanın göreceği bilgi sözlüğü: geçerli aksiyonlar, maske, faz, ante, run kimliği."""
         ids = self._gecerli()
         bitti = self._durum.get("state") == "GAME_OVER" or self._durum.get("won")
         if not ids and not bitti:
@@ -319,6 +329,8 @@ class BalatroOrtami(gym.Env):
             self._log.sayac_artir("zaman_asimi")
 
     def _kaydet(self, once, cmd, cevap, hata, otomatik, secenekler, aksiyon_id, bot_ms, api_ms, ek_not=None):
+        """Bir komutu logger'a yazar: gözlem, ham durum, cevap, hata, seçenekler, süreler ve ajanın karar açıklaması.
+        """
         if self._log is None:
             return
         self._log.karar(
@@ -377,6 +389,7 @@ class BalatroOrtami(gym.Env):
         raise OrtamHatasi("Otomatik ilerleme sonlanmadı (100 adım)")
 
     def _sonuc_durumu(self, _kesildi: bool) -> str:
+        """Bitmiş run'ın sonucunu belirler: kazandi, kaybetti veya iptal."""
         if self._durum.get("won"):
             return "kazandi"
         if self._durum.get("state") == "GAME_OVER":
@@ -384,6 +397,7 @@ class BalatroOrtami(gym.Env):
         return "iptal"
 
     def _run_kapat(self, durum: str) -> None:
+        """Run'ın sonuç kaydını (son ante, ölüm nedeni, skor) yazıp logger'ı kapatır."""
         if self._log is None:
             return
         d = self._durum

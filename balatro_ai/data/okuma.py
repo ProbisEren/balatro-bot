@@ -15,6 +15,8 @@ import duckdb
 
 
 def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
+    """Bir klasördeki JSONL kayıtlarını DuckDB'ye bağlar; `runs`, `decisions` ve türetilmiş görünümleri kurar.
+    """
     kok = Path(kok)
     desen = str(kok / "*.jsonl").replace("'", "''")
     con = duckdb.connect(":memory:")
@@ -23,6 +25,7 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
     )
 
     def j(yol: str) -> str:
+        """JSON kaydından bir alanı metin olarak çıkaran SQL ifadesi üretir."""
         return f"json_extract_string(json, '{yol}')"
 
     def jn(yol: str) -> str:

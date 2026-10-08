@@ -1,3 +1,5 @@
+"""Greedy ajanın el ve discard kararlarının sentetik gözlemlerle ve sahte oyunla testleri."""
+
 import pytest
 
 from balatro_ai.agents.greedy import GreedyAjan
@@ -10,10 +12,12 @@ from tests.sahte_oyun import SahteOyun
 
 
 def _kart(key):
+    """Anahtardan, ajanın okuduğu biçimde bir kart sözlüğü üretir."""
     return {"key": key, "state": [], "modifier": []}
 
 
 def gozlem(el, deste=(), *, hedef=300, skor=0, hands_left=4, discards_left=3, boss=None):
+    """Verilen el, deste ve blind bilgisinden ajanın göreceği gözlem sözlüğünü kurar."""
     tur = "BOSS" if boss else "SMALL"
     return {
         "state": "SELECTING_HAND",
@@ -27,16 +31,19 @@ def gozlem(el, deste=(), *, hedef=300, skor=0, hands_left=4, discards_left=3, bo
 
 
 def bilgi(g, kume="dar"):
+    """Gözlemdeki durum için ortamın vereceği geçerli aksiyon bilgisini hesaplar."""
     ids = aksiyonlar.gecerli({**g, "money": 4}, kume)
     return {"gecerli_aksiyonlar": ids}
 
 
 def coz(a):
+    """Aksiyon kimliğini (komut adı, seçilen kart indeksleri) çiftine çevirir."""
     k = aksiyonlar.komut(a)
     return k["yontem"], tuple(k["parametreler"]["cards"])
 
 
 def test_blind_biten_oynanis_varsa_onu_oynar():
+    """Blind'ı bitirecek bir oynanış varsa ajanın onu oynadığını doğrular."""
     el = ["H_2", "H_5", "H_9", "H_J", "H_K", "D_3", "C_4", "S_7"]  # Flush = 284
     g = gozlem(el, deste=["S_A"], hedef=250)
     ajan = GreedyAjan(1)
@@ -46,6 +53,7 @@ def test_blind_biten_oynanis_varsa_onu_oynar():
 
 
 def test_en_yuksek_skorlu_kombinasyonu_secer_discard_yoksa():
+    """Discard hakkı yokken ajanın en yüksek skorlu kombinasyonu oynadığını doğrular."""
     el = ["S_A", "D_A", "H_9", "C_4", "S_2", "D_7", "H_K", "C_3"]
     g = gozlem(el, deste=["S_5"], hedef=1000, discards_left=0)
     ajan = GreedyAjan(1)
@@ -55,6 +63,8 @@ def test_en_yuksek_skorlu_kombinasyonu_secer_discard_yoksa():
 
 
 def test_secilen_oynanis_tum_kombinasyonlar_icinde_en_iyisidir():
+    """Seçilen oynanışın skorunun tüm 1-5 kartlık kombinasyonlar içinde en yüksek olduğunu doğrular.
+    """
     import itertools
 
     from balatro_ai.sim.kartlar import apiden
@@ -73,6 +83,7 @@ def test_secilen_oynanis_tum_kombinasyonlar_icinde_en_iyisidir():
 
 
 def test_flush_cizerken_digerlerini_atar():
+    """Dört maça ile flush çizerken ajanın yalnızca maça olmayan kartları attığını doğrular."""
     el = ["S_A", "S_K", "S_Q", "S_J", "H_2", "D_3", "C_4", "D_5"]
     deste = [f"S_{r}" for r in "3456789T"] + ["H_6", "D_7", "C_8", "H_9"]
     g = gozlem(el, deste, hedef=2000)
@@ -83,6 +94,8 @@ def test_flush_cizerken_digerlerini_atar():
 
 
 def test_son_elde_gecme_ihtimali_varsa_discard_eder_yoksa_oynar():
+    """Son elde blind'ı geçme ihtimali varsa discard, hiç ihtimal yoksa oynama kararı verildiğini doğrular.
+    """
     el = ["S_A", "S_K", "S_Q", "S_J", "H_2", "D_3", "C_4", "D_5"]
     deste = [f"S_{r}" for r in "3456789T"]
     g = gozlem(el, deste, hedef=500, hands_left=1)
@@ -95,6 +108,7 @@ def test_son_elde_gecme_ihtimali_varsa_discard_eder_yoksa_oynar():
 
 
 def test_ayni_tohum_ayni_karar():
+    """Aynı tohumla aynı kararın verildiğini (tekrarlanabilirlik) doğrular."""
     el = ["S_A", "S_K", "S_Q", "S_J", "H_2", "D_3", "C_4", "D_5"]
     deste = [f"S_{r}" for r in "3456789T"] + ["H_6", "D_7"]
     g = gozlem(el, deste, hedef=2000)
@@ -102,6 +116,7 @@ def test_ayni_tohum_ayni_karar():
 
 
 def test_psychic_bossunda_bes_kart_oynar():
+    """The Psychic boss'unda ajanın 5 kart oynadığını (azı sıfır puan) doğrular."""
     el = ["S_A", "D_A", "H_9", "C_4", "S_2", "D_7", "H_K", "C_3"]
     g = gozlem(el, hedef=10_000, discards_left=0, boss="The Psychic")
     yontem, kartlar = coz(GreedyAjan(1).sec(g, bilgi(g)))
@@ -109,6 +124,7 @@ def test_psychic_bossunda_bes_kart_oynar():
 
 
 def test_el_disindaki_asamalar_sabit_kural():
+    """Blind seçimi, mağaza ve paket aşamalarında sabit kuralın uygulandığını doğrular."""
     ajan = GreedyAjan(1)
     for faz, beklenen in (("BLIND_SELECT", "select"), ("SHOP", "next_round")):
         g = {"state": faz, "money": 4, "blinds": {"a": {"status": "SELECT", "type": "SMALL"}},
@@ -124,6 +140,8 @@ def test_el_disindaki_asamalar_sabit_kural():
 
 @pytest.mark.parametrize("kume", ["dar", "tam"])
 def test_sahte_oyunda_greedy_run_bitirir_ve_karar_aciklamasi_loglanir(tmp_path, kume):
+    """Greedy ajanın sahte oyunda bir run'ı bitirdiğini ve karar açıklamalarının loga yazıldığını doğrular.
+    """
     env = BalatroOrtami(SahteOyun(), kume=kume, log_kok=tmp_path, uyku_sn=0, yerlesme_sn=0)
     ozet = run_oyna(env, GreedyAjan(3), "GRD0001")
     env.close()

@@ -34,14 +34,17 @@ SAYACLAR = ("zaman_asimi", "yeniden_deneme", "oyun_cokmesi", "mod_hatasi")
 
 
 class LoggerHatasi(Exception):
-    pass
+    """Logger kural ihlali veya kayıt hatası; run'ın sessizce devam etmemesi için istisna olarak yükseltilir.
+    """
 
 
 def _simdi() -> str:
+    """Şu anın UTC zamanını ISO biçiminde metin olarak döndürür."""
     return datetime.now(UTC).isoformat()
 
 
 def _json_satiri(kayit: dict[str, Any]) -> str:
+    """Kaydı tek satırlık, anahtarları sıralı, kompakt JSON metnine çevirir (JSONL biçimi)."""
     return json.dumps(kayit, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
@@ -66,6 +69,7 @@ def gozlem_sizintisi(gozlem: Any) -> str | None:
     bulunan: list[str] = []
 
     def gez(o: Any, yol: str) -> None:
+        """Gözlemi özyinelemeli gezip `seed` anahtarlarının yollarını toplar."""
         if isinstance(o, dict):
             for k, v in o.items():
                 if str(k).lower() == "seed":
@@ -88,6 +92,8 @@ def gozlem_sizintisi(gozlem: Any) -> str | None:
 
 
 def _dosya_ozeti(yol: str | Path | None) -> dict[str, Any] | None:
+    """Bir dosyanın yolunu, sha256 özetini, boyutunu ve içindeki hata satırı sayısını döndürür (Lovely log özeti için).
+    """
     if yol is None:
         return None
     yol = Path(yol)
@@ -104,6 +110,7 @@ def _dosya_ozeti(yol: str | Path | None) -> dict[str, Any] | None:
 
 
 def _git(*args: str) -> str | None:
+    """git komutunu çalıştırıp çıktısını döndürür; git yoksa veya komut hata verirse None."""
     try:
         cikti = subprocess.run(
             ["git", *args], capture_output=True, text=True, timeout=10, check=True
@@ -134,6 +141,8 @@ class RunLogger:
     """Tek bir run için kayıt yazar. `with` ile kullanılır."""
 
     def __init__(self, kok: str | Path, run_id: str | None = None):
+        """Bir run için kayıt yazıcısı hazırlar (dosyayı henüz açmaz); run_id verilmezse zaman ve rastgele ek üretilir.
+        """
         self.kok = Path(kok)
         self.run_id = run_id or f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:8]}"
         self.yol = self.kok / f"{self.run_id}.jsonl"
@@ -160,6 +169,8 @@ class RunLogger:
         return self
 
     def __exit__(self, tur, deger, iz) -> None:
+        """Bloktan çıkarken run bitirilmediyse sonucu `hata` (istisna varsa) veya `iptal` olarak yazar ve dosyayı kapatır.
+        """
         try:
             if self._basladi and not self._bitti:
                 # Run beklenmedik şekilde bitti; sonucu açıkça işaretle.
@@ -171,6 +182,7 @@ class RunLogger:
                 self._dosya = None
 
     def _yaz(self, kayit: dict[str, Any]) -> None:
+        """Tek bir kaydı dosyaya ekler ve diske yazılmasını zorlar (çökmede kayıp olmasın)."""
         if self._dosya is None:
             raise LoggerHatasi("Logger açık değil (`with RunLogger(...)` kullan)")
         self._dosya.write(_json_satiri(kayit) + "\n")
@@ -324,6 +336,7 @@ class RunLogger:
         self._bitti = True
 
     def _kontrol_acik(self) -> None:
+        """Kayıt yazmadan önce run'ın başlamış ve bitmemiş olduğunu doğrular."""
         if not self._basladi:
             raise LoggerHatasi("Önce run_basla çağrılmalı")
         if self._bitti:

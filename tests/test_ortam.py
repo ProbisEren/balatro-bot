@@ -1,3 +1,5 @@
+"""Gymnasium ortamının (aksiyon kümeleri, ödül, loglama, oyun tuhaflıkları) sahte oyunla testleri."""
+
 import json
 
 import numpy as np
@@ -12,15 +14,18 @@ from tests.sahte_oyun import SahteOyun
 
 
 def _ortam(kume="dar", log_kok=None, **kw):
+    """Testler için sahte oyuna bağlı, beklemesiz bir ortam kurar."""
     kw.setdefault("yerlesme_sn", 0)
     return BalatroOrtami(SahteOyun(), kume=kume, log_kok=log_kok, uyku_sn=0, **kw)
 
 
 def _oyna_id(*indeksler):
+    """Verilen kart indekslerini oynama aksiyonunun kimliğine çevirir."""
     return aksiyonlar.KOMBINASYONLAR.index(tuple(indeksler))
 
 
 def test_reset_dar_kume_el_secimine_gelir_ve_seed_gizli():
+    """Dar kümede reset'in el seçimine geldiğini ve gözlemde seed olmadığını doğrular."""
     env = _ortam()
     gozlem, _ = env.reset(options={"oyun_seed": "ABC"})
     assert gozlem["state"] == "SELECTING_HAND" and "seed" not in gozlem
@@ -29,6 +34,7 @@ def test_reset_dar_kume_el_secimine_gelir_ve_seed_gizli():
 
 def test_dar_kume_maske_8_kart_icin_436_aksiyon():
     # 8 kartın 1-5'li seçimleri: 8+28+56+70+56 = 218; oyna + discard = 436.
+    """8 kartlık elde 218 oyna + 218 at = 436 geçerli aksiyon olduğunu doğrular."""
     env = _ortam()
     _, bilgi = env.reset(options={"oyun_seed": "ABC"})
     assert bilgi["action_mask"].sum() == 436
@@ -36,6 +42,8 @@ def test_dar_kume_maske_8_kart_icin_436_aksiyon():
 
 
 def test_blind_gecilince_odul_1_ve_otomatik_magaza_gecisi():
+    """Small Blind geçilince ödülün 1 olduğunu ve dar kümede mağaza geçişinin otomatik yapıldığını doğrular.
+    """
     env = _ortam()
     env.reset(options={"oyun_seed": "ABC"})
     # 5 kart oyna: 100 chips = Small Blind hedefi -> +1; dar kümede otomatik cash_out/next_round/select.
@@ -46,6 +54,7 @@ def test_blind_gecilince_odul_1_ve_otomatik_magaza_gecisi():
 
 
 def test_gecersiz_aksiyon_reddedilir():
+    """Geçerli olmayan bir aksiyonun ajan hatası olarak reddedildiğini doğrular."""
     env = _ortam()
     env.reset(options={"oyun_seed": "ABC"})
     with pytest.raises(GecersizAksiyon):
@@ -53,6 +62,7 @@ def test_gecersiz_aksiyon_reddedilir():
 
 
 def test_oyunun_reddettigi_aksiyon_engellenir_ve_durum_degismez():
+    """Oyunun reddettiği aksiyonun maskeden çıkarıldığını ve durumun değişmediğini doğrular."""
     env = _ortam()
     env.reset(options={"oyun_seed": "ABC"})
     env.istemci.zorla_red = {"discard"}
@@ -64,6 +74,7 @@ def test_oyunun_reddettigi_aksiyon_engellenir_ve_durum_degismez():
 
 
 def test_random_ajan_dar_kume_run_bitirir_ve_loglar(tmp_path):
+    """Rastgele ajanın dar kümede bir run'ı bitirdiğini ve her komutun loglandığını doğrular."""
     env = _ortam(log_kok=tmp_path, ajan=RastgeleAjan(1).bilgi(), yaklasim="B_dar")
     ozet = run_oyna(env, RastgeleAjan(1), "TEST0001")
     env.close()
@@ -88,6 +99,8 @@ def test_random_ajan_dar_kume_run_bitirir_ve_loglar(tmp_path):
 
 
 def test_ayni_seed_ayni_ajan_ayni_run(tmp_path):
+    """Aynı seed ve aynı ajanla aynı run'ın ve aynı durum özetlerinin elde edildiğini doğrular (determinizm).
+    """
     sonuclar = []
     for ad in ("a", "b"):
         env = _ortam(log_kok=tmp_path / ad)
@@ -103,6 +116,7 @@ def test_ayni_seed_ayni_ajan_ayni_run(tmp_path):
 
 
 def test_tam_kume_magaza_ve_paket_kararlari_loglanir(tmp_path):
+    """Tam kümede mağaza ve paket kararlarının loglandığını doğrular."""
     env = _ortam(kume="tam", log_kok=tmp_path, yaklasim="A_tam")
     for tohum in range(8):  # farklı tohumlarla birkaç run: mağaza ve paket yollarını gez
         run_oyna(env, RastgeleAjan(tohum), f"TEST{tohum:04d}")
@@ -119,6 +133,7 @@ def test_tam_kume_magaza_ve_paket_kararlari_loglanir(tmp_path):
 
 
 def test_max_adim_run_i_keser(tmp_path):
+    """Adım sınırı dolunca run'ın kesildiğini ve `iptal` kaydedildiğini doğrular."""
     env = _ortam(log_kok=tmp_path, max_adim=3)
     env.reset(options={"oyun_seed": "X"})
     kesildi = False
@@ -131,6 +146,7 @@ def test_max_adim_run_i_keser(tmp_path):
 
 
 def test_gozlem_filtresi_ortamdan_gecerek_gelir():
+    """Ajana giden gözlemin filtreden geçtiğini (deste sıralı) doğrular."""
     env = _ortam()
     gozlem, _ = env.reset(options={"oyun_seed": "ABC"})
     anahtarlar = [k["key"] for k in gozlem["cards"]["cards"]]
@@ -140,6 +156,8 @@ def test_gozlem_filtresi_ortamdan_gecerek_gelir():
 
 def test_atlama_sonrasi_gecikmeli_paket_beklenir():
     # Gerçek oyunda görülen kilitlenme: tag'in açtığı paket gecikmeyle gelir, ajan beklemeden devam ederse oyun takılır.
+    """Blind atlandıktan sonra gecikmeli açılan tag paketinin ortam tarafından beklendiğini doğrular.
+    """
     env = _ortam(kume="tam", yerlesme_sn=0.4, yerlesme_en_cok_sn=3.0)
     env.istemci.skip_sonrasi_gecikmeli_paket = True
     _, bilgi = env.reset(options={"oyun_seed": "ABC"})
@@ -150,6 +168,7 @@ def test_atlama_sonrasi_gecikmeli_paket_beklenir():
 
 
 def _pakete_gir(env):
+    """Blind'ı atlayıp tag paketinin açılmasını bekleyerek pakete girer."""
     env.istemci.skip_sonrasi_gecikmeli_paket = True
     env.reset(options={"oyun_seed": "ABC"})
     _, _, _, _, bilgi = env.step(aksiyonlar._BLIND_ATLA)
@@ -158,6 +177,8 @@ def _pakete_gir(env):
 
 
 def test_hedef_sayisi_reddedilen_mesajdan_ogrenilir():
+    """Oyunun reddettiği hedefsiz seçimden kartın hedef sayısının öğrenildiğini ve sonra hedefli seçimin kabul edildiğini doğrular.
+    """
     env = _ortam(kume="tam", yerlesme_sn=0.4, yerlesme_en_cok_sn=3.0)
     env.istemci.hedef_gerekir = {"c_arcana0": (1, 2)}
     _pakete_gir(env)
@@ -176,6 +197,7 @@ def test_hedef_sayisi_reddedilen_mesajdan_ogrenilir():
 
 
 def test_cevap_gelmeyen_pack_komutu_durum_degistiyse_basarili_sayilir(tmp_path):
+    """Cevap gelmeyen `pack` komutunun durum değiştiyse başarılı sayıldığını doğrular."""
     env = _ortam(kume="tam", log_kok=tmp_path, yerlesme_sn=0.4, yerlesme_en_cok_sn=3.0)
     env.istemci.pack_cevapsiz = True
     _pakete_gir(env)
@@ -198,6 +220,7 @@ def test_cevap_gelmeyen_pack_komutu_durum_degistiyse_basarili_sayilir(tmp_path):
     ],
 )
 def test_hedef_hata_mesaji_bicimleri(mesaj, beklenen):
+    """Hedef sayısı hata mesajının `1-3` ve `exactly 2` biçimlerinin ayrıştırıldığını doğrular."""
     env = _ortam(kume="tam")
     env._hedef_ogren(mesaj)
     assert env._hedef_gereksinimi == {beklenen[0]: beklenen[1]}

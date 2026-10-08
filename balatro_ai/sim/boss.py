@@ -22,6 +22,8 @@ YUZ_RUTBELERI = frozenset("JQK")
 
 
 def kart_debuff_mi(boss: str | None, kart: Kart) -> bool:
+    """Verilen boss blind'in bu kartı debuff'layıp debuff'lamadığı (renk, yüz kartı, Verdant Leaf).
+    """
     if boss is None:
         return False
     if boss == "Verdant Leaf":
@@ -45,6 +47,7 @@ def el_debuff_mi(
     gecmis_turler: frozenset[str] = frozenset(),
     ilk_tur: str | None = None,
 ) -> bool:
+    """Boss blind'in bu eli tamamen sıfır puanlayıp puanlamadığı (Psychic, Eye, Mouth)."""
     if boss == "The Psychic":
         return oynanan_sayisi < 5
     if boss == "The Eye":

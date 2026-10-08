@@ -63,15 +63,18 @@ TOPLAM_DAR = 2 * K
 
 
 def aksiyon_sayisi(kume: str) -> int:
+    """Aksiyon kümesindeki toplam aksiyon kimliği sayısı (Discrete uzayın boyutu)."""
     return TOPLAM_DAR if kume == "dar" else TOPLAM_TAM
 
 
 def _sayi(durum: dict[str, Any], alan: str) -> int:
+    """Durumdaki bir kart alanının (el, deste, joker...) kart sayısı."""
     a = durum.get(alan)
     return len(a["cards"]) if isinstance(a, dict) and isinstance(a.get("cards"), list) else 0
 
 
 def _kartlar(durum: dict[str, Any], alan: str) -> list[dict[str, Any]]:
+    """Durumdaki bir kart alanının kart listesi (alan yoksa boş liste)."""
     a = durum.get(alan)
     return a["cards"] if isinstance(a, dict) and isinstance(a.get("cards"), list) else []
 
@@ -117,6 +120,7 @@ def komut(aksiyon_id: int, durum: dict[str, Any] | None = None) -> dict[str, Any
 
 
 def _el_aksiyonlari(durum: dict[str, Any]) -> list[int]:
+    """Elin kart sayısına ve kalan el/discard hakkına göre geçerli oyna ve at aksiyon kimlikleri."""
     n = min(_sayi(durum, "hand"), MAKS_EL)
     rnd = durum.get("round") or {}
     sinir = [i for i, c in enumerate(KOMBINASYONLAR) if c[-1] < n]
@@ -148,6 +152,8 @@ def _hedefli_secimler(
 
 
 def _tuketilebilir_secimi(durum: dict[str, Any], gereksinim: Gereksinim) -> list[int]:
+    """Elde tutulan tüketilebilir kartları kullanma aksiyonları; hedef sayısı biliniyorsa yalnızca geçerli hedef kombinasyonlarıyla.
+    """
     ids: list[int] = []
     el = _sayi(durum, "hand")
     for i, k in enumerate(_kartlar(durum, "consumables")[:MAKS_TUKETILEBILIR]):

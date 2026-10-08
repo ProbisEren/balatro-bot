@@ -24,6 +24,7 @@ MUHURLER = frozenset({"red", "blue", "gold", "purple"})
 
 @dataclass(frozen=True)
 class Kart:
+    """Oyun kartı: rütbe, renk ve isteğe bağlı geliştirme, baskı, mühür, kalıcı chip ve debuff."""
     rutbe: str  # "2".."9", "T", "J", "Q", "K", "A"
     renk: str  # "S", "H", "C", "D"
     gelistirme: str | None = None
@@ -33,6 +34,7 @@ class Kart:
     debuff: bool = False
 
     def __post_init__(self) -> None:
+        """Kartın alanlarının oyundaki geçerli değerlerden biri olduğunu doğrular."""
         if self.rutbe not in RUTBE_ID:
             raise ValueError(f"Bilinmeyen rütbe: {self.rutbe!r}")
         if self.renk not in RENKLER:
@@ -46,6 +48,7 @@ class Kart:
 
     @property
     def tas_mi(self) -> bool:
+        """Kartın bir Stone kart olup olmadığı."""
         return self.gelistirme == "stone"
 
     @property
@@ -99,6 +102,8 @@ def apiden(kart: dict[str, Any]) -> Kart:
     if not isinstance(mod, dict):
         mod = {}
     def sec(ad: str, tablo: dict[str, str]) -> str | None:
+        """`modifier` sözlüğündeki bir alanı bizim adlarımıza çevirir; bilinmeyen değerde hata verir.
+        """
         v = mod.get(ad)
         if v is None:
             return None
