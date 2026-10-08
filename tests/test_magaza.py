@@ -168,13 +168,14 @@ def _kupon(g, anahtar, fiyat=10):
     return g
 
 
-def test_el_hakki_kuponu_zengin_botta_alinir():
-    """Çok parası olan botun, el hakkı veren bir kuponu (Grabber, oyun kodundan +1 el) satın aldığını doğrular."""
-    g = _kupon(_durum(para=98), "v_grabber")
+def test_el_hakki_kuponu_degerlenir_ve_net_pozitifse_alinir():
+    """Grabber'ın (oyun kodundan +1 el) aday olarak değerlendirildiğini; maliyeti kazancından küçükse alındığını doğrular."""
+    g = _kupon(_durum(para=98), "v_grabber", fiyat=1)
     for ad, skor in (("big", 1800), ("boss", 2400)):  # kolay hedefte ek el hakkı fark yaratmaz; zor hedef seçilir
         g["blinds"][ad]["score"] = skor
     yontem, p, a = _karar(g)
-    assert (yontem, p) == ("buy", {"voucher": 0}) and a["karar"] == "satin_al:v_grabber"
+    assert [ad for _, ad in a["adaylar"]] == ["v_grabber"] and a["adaylar"][0][0] > 0
+    assert (yontem, p) == ("buy", {"voucher": 0})
 
 
 def test_modellenmemis_kuponu_almaz():

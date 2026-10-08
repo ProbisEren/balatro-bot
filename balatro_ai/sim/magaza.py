@@ -35,11 +35,10 @@ def faiz_kaybi(para: int, fiyat: int, tur_sayisi: int = SONRAKI_BLIND) -> int:
 def maliyet(para: int, fiyat: int) -> float:
     """Bir satın almanın "geçilen blind" cinsinden maliyeti: (fiyat + kaybedilen faiz) x paranın değeri.
 
-    Faiz tavanını (25 dolar) aşan zenginlikte her dolar daha az değerlidir: 98 dolarlı bir bot için 10 dolar, 25 dolarlı
-    bota göre çok daha az feragattir (harcanacak başka yeri de yok). Bu ölçekleme (25/para) bir TAHMİNdir, deneyle ayarlanacak.
+    `PARA_DEGERI` sabit bir TAHMİNdir ve zenginliğe göre elle ölçeklenmez; paranın gerçek değeri (başka neye
+    harcanabileceği) ileride run verisinden öğrenilecek. Faiz kaybı ise oyunun kuralıyla tam hesaplanır.
     """
-    zenginlik = min(1.0, 25 / max(para, 1))
-    return (fiyat + faiz_kaybi(para, fiyat)) * PARA_DEGERI * zenginlik
+    return (fiyat + faiz_kaybi(para, fiyat)) * PARA_DEGERI
 
 
 def desteler_uret(deste: Sequence[Kart], hedef_sayisi: int, rng: random.Random, dunya: int = DUNYA) -> list[list[list[Kart]]]:
