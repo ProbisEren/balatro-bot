@@ -186,3 +186,91 @@ def test_reddedilen_komut_hatasi_kaydedilir(tmp_path):
         "SELECT json_extract_string(hata, '$.kod') FROM decisions"
     ).fetchone()
     assert satir[0] == "-32002"
+
+
+def _gercek_durum():
+    from pathlib import Path
+
+    return json.loads((Path(__file__).parent / "veri" / "durum_el_secimi.json").read_text())
+
+
+def test_oynanan_elin_turu_ve_cekilen_kartlar_gercek_durumdan(tmp_path):
+    once = _gercek_durum()
+    el_idler = [k["id"] for k in once["hand"]["cards"]]
+    # İndeks 2 ve 3 (C_9, D_9) oynanır: Pair. İki yeni kart gelir.
+    sonra = json.loads(json.dumps(once))
+    sonra["hands"]["Pair"]["played"] += 1
+    sonra["round"]["chips"] = 56
+    kalan = [k for i, k in enumerate(sonra["hand"]["cards"]) if i not in (2, 3)]
+    yeni = [{"id": 9001, "key": "H_2"}, {"id": 9002, "key": "S_3"}]
+    sonra["hand"]["cards"] = kalan + yeni
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="SELECTING_HAND", gozlem={}, ham_durum=once, cevap=sonra,
+            komut={"yontem": "play", "parametreler": {"cards": [2, 3]}},
+        )
+        log.run_bitir(durum="iptal")
+    satir = baglan(tmp_path).execute(
+        "SELECT kartlar, el_turu, cekilen, skor_once, skor_sonra, ante FROM eller"
+    ).fetchone()
+    assert satir[0] == ["C_9", "D_9"]
+    assert satir[1] == "Pair"
+    assert satir[2] == ["H_2", "S_3"]
+    assert (satir[3], satir[4], satir[5]) == (0, 56, 1)
+    assert len(el_idler) == 8
+
+
+def test_discard_el_turu_bos_ve_cekilen_dolu(tmp_path):
+    once = _gercek_durum()
+    sonra = json.loads(json.dumps(once))
+    sonra["hand"]["cards"] = sonra["hand"]["cards"][2:] + [{"id": 9001, "key": "H_2"}, {"id": 9002, "key": "S_3"}]
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="SELECTING_HAND", gozlem={}, ham_durum=once, cevap=sonra,
+            komut={"yontem": "discard", "parametreler": {"cards": [0, 1]}},
+        )
+        log.run_bitir(durum="iptal")
+    satir = baglan(tmp_path).execute("SELECT islem, kartlar, el_turu, cekilen FROM eller").fetchone()
+    assert satir[0] == "discard" and satir[1] == ["S_A", "D_J"]
+    assert satir[2] is None and satir[3] == ["H_2", "S_3"]
+
+
+def test_tuketilebilir_kullanimi_eldeki_ve_paketten(tmp_path):
+    durum = {
+        "hand": {"cards": [{"key": "S_A"}, {"key": "D_J"}, {"key": "C_9"}]},
+        "consumables": {"cards": [{"key": "c_magician"}, {"key": "c_hermit"}]},
+        "pack": {"cards": [{"key": "c_death"}, {"key": "c_strength"}]},
+    }
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SELECTING_HAND", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "use", "parametreler": {"consumable": 0, "cards": [1, 2]}})
+        log.karar(faz="SMODS_BOOSTER_OPENED", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "pack", "parametreler": {"card": 1, "targets": [0]}})
+        log.karar(faz="SMODS_BOOSTER_OPENED", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "pack", "parametreler": {"skip": True}})
+        log.run_bitir(durum="iptal")
+    satirlar = baglan(tmp_path).execute(
+        "SELECT kaynak, anahtar, hedef_kartlar FROM tuketilebilir_kullanimi ORDER BY adim"
+    ).fetchall()
+    assert satirlar == [("eldeki", "c_magician", ["D_J", "C_9"]), ("paket", "c_strength", ["S_A"])]
+
+
+def test_satislar_joker_ve_tuketilebilir(tmp_path):
+    durum = {
+        "jokers": {"cards": [{"key": "j_joker", "cost": {"sell": 2}}]},
+        "consumables": {"cards": [{"key": "c_fool", "cost": {"sell": 1}}]},
+    }
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SHOP", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "sell", "parametreler": {"joker": 0}})
+        log.karar(faz="SHOP", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "sell", "parametreler": {"consumable": 0}})
+        log.run_bitir(durum="iptal")
+    satirlar = baglan(tmp_path).execute(
+        "SELECT tur, anahtar, satis_fiyati FROM satislar ORDER BY adim"
+    ).fetchall()
+    assert satirlar == [("joker", "j_joker", 2), ("tuketilebilir", "c_fool", 1)]

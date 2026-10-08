@@ -122,20 +122,77 @@ def _turetilmis_gorunumler(con: duckdb.DuckDBPyConnection) -> None:
              range(CAST(COALESCE(json_array_length(json_extract(d.ham_durum, '$.pack.cards')), 0) AS BIGINT)) AS t(i)
         """
     )
-    # Oynanan ve atılan eller: hangi kartlar, hangi durumda.
+    # Oynanan ve atılan eller: hangi kartlar, hangi el türü, ne çekildi, skor değişimi.
+    onceki = "from_json(json_extract(d.ham_durum, '$.hand.cards'), '[{\"id\":\"BIGINT\",\"key\":\"VARCHAR\"}]')"
+    sonraki = "from_json(json_extract(d.cevap, '$.hand.cards'), '[{\"id\":\"BIGINT\",\"key\":\"VARCHAR\"}]')"
     con.execute(
-        """
+        f"""
         CREATE VIEW eller AS
         SELECT d.run_id, d.adim, json_extract_string(d.komut, '$.yontem') AS islem,
           list_transform(
             from_json(json_extract(d.komut, '$.parametreler.cards'), '["INTEGER"]'),
             x -> json_extract_string(d.ham_durum, '$.hand.cards[' || x || '].key')
           ) AS kartlar,
+          -- Oynanan el türü: `played` sayacı artan tek tür (yalnızca play için).
+          CASE WHEN json_extract_string(d.komut, '$.yontem') = 'play' THEN
+            list_filter(
+              json_keys(json_extract(d.ham_durum, '$.hands')),
+              k -> CAST(json_extract_string(d.cevap, '$.hands."' || k || '".played') AS INTEGER)
+                 > CAST(json_extract_string(d.ham_durum, '$.hands."' || k || '".played') AS INTEGER)
+            )[1]
+          END AS el_turu,
+          -- Komuttan sonra ele yeni gelen kartlar (id farkı).
+          list_transform(
+            list_filter({sonraki}, c -> NOT list_contains(list_transform({onceki}, b -> b.id), c.id)),
+            c -> c.key
+          ) AS cekilen,
           CAST(json_extract_string(d.ham_durum, '$.round.hands_left') AS INTEGER) AS kalan_el,
           CAST(json_extract_string(d.ham_durum, '$.round.discards_left') AS INTEGER) AS kalan_discard,
           CAST(json_extract_string(d.ham_durum, '$.round.chips') AS BIGINT) AS skor_once,
-          CAST(json_extract_string(d.cevap, '$.round.chips') AS BIGINT) AS skor_sonra
+          CAST(json_extract_string(d.cevap, '$.round.chips') AS BIGINT) AS skor_sonra,
+          CAST(json_extract_string(d.ham_durum, '$.round_num') AS INTEGER) AS tur_no,
+          CAST(json_extract_string(d.ham_durum, '$.ante_num') AS INTEGER) AS ante
         FROM decisions d
         WHERE json_extract_string(d.komut, '$.yontem') IN ('play', 'discard')
+        """
+    )
+    # Tüketilebilir (tarot/gezegen/spektral) kullanımı: eldeki veya açık paketten, hedef kartlarıyla.
+    hedefler = (
+        "list_transform(from_json(json_extract(d.komut, '$.parametreler.{alan}'), '[\"INTEGER\"]'),"
+        " x -> json_extract_string(d.ham_durum, '$.hand.cards[' || x || '].key'))"
+    )
+    con.execute(
+        f"""
+        CREATE VIEW tuketilebilir_kullanimi AS
+        SELECT d.run_id, d.adim, 'eldeki' AS kaynak,
+          json_extract_string(d.ham_durum,
+            '$.consumables.cards[' || json_extract_string(d.komut, '$.parametreler.consumable') || '].key') AS anahtar,
+          {hedefler.format(alan='cards')} AS hedef_kartlar
+        FROM decisions d WHERE json_extract_string(d.komut, '$.yontem') = 'use'
+        UNION ALL
+        SELECT d.run_id, d.adim, 'paket' AS kaynak,
+          json_extract_string(d.ham_durum,
+            '$.pack.cards[' || json_extract_string(d.komut, '$.parametreler.card') || '].key') AS anahtar,
+          {hedefler.format(alan='targets')} AS hedef_kartlar
+        FROM decisions d
+        WHERE json_extract_string(d.komut, '$.yontem') = 'pack'
+          AND json_extract(d.komut, '$.parametreler.card') IS NOT NULL
+        """
+    )
+    # Satışlar: ne satıldı, kaça.
+    con.execute(
+        """
+        CREATE VIEW satislar AS
+        SELECT d.run_id, d.adim,
+          CASE WHEN json_extract(d.komut, '$.parametreler.joker') IS NOT NULL THEN 'joker' ELSE 'tuketilebilir' END AS tur,
+          json_extract_string(d.ham_durum,
+            CASE WHEN json_extract(d.komut, '$.parametreler.joker') IS NOT NULL
+                 THEN '$.jokers.cards[' || json_extract_string(d.komut, '$.parametreler.joker') || '].key'
+                 ELSE '$.consumables.cards[' || json_extract_string(d.komut, '$.parametreler.consumable') || '].key' END) AS anahtar,
+          CAST(json_extract_string(d.ham_durum,
+            CASE WHEN json_extract(d.komut, '$.parametreler.joker') IS NOT NULL
+                 THEN '$.jokers.cards[' || json_extract_string(d.komut, '$.parametreler.joker') || '].cost.sell'
+                 ELSE '$.consumables.cards[' || json_extract_string(d.komut, '$.parametreler.consumable') || '].cost.sell' END) AS INTEGER) AS satis_fiyati
+        FROM decisions d WHERE json_extract_string(d.komut, '$.yontem') = 'sell'
         """
     )
