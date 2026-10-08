@@ -19,7 +19,7 @@ def _eksikler() -> list[str]:
         if not ast.get_docstring(agac):
             eksik.append(f"{goreli}: modül açıklaması yok")
 
-        def gez(dugum: ast.AST, ad: str = "") -> None:
+        def gez(dugum: ast.AST, ad: str = "", satirlar: list[str] = satirlar, goreli: Path = goreli) -> None:
             """Düğümün alt sınıf ve fonksiyonlarını özyinelemeli gezer, açıklaması eksik olanı listeye ekler."""
             for c in ast.iter_child_nodes(dugum):
                 if isinstance(c, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
@@ -30,7 +30,7 @@ def _eksikler() -> list[str]:
                     yorum_var = ust >= 0 and satirlar[ust].strip().startswith("#")
                     if not ast.get_docstring(c) and not yorum_var:
                         eksik.append(f"{goreli}:{c.lineno}: {q} için açıklama yok")
-                    gez(c, q)
+                    gez(c, q, satirlar, goreli)
 
         gez(agac)
     return eksik
