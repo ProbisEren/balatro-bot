@@ -36,7 +36,11 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           json_extract(json, '$.cevap') AS cevap,
           json_extract(json, '$.hata') AS hata,
           json_extract(json, '$.secenekler') AS secenekler,
+          {j('$.ham_durum_ozeti')} AS ham_durum_ozeti,
+          {j('$.cevap_ozeti')} AS cevap_ozeti,
           CAST({j('$.sure_ms')} AS DOUBLE) AS sure_ms,
+          CAST({j('$.bot_ms')} AS DOUBLE) AS bot_ms,
+          CAST({j('$.api_ms')} AS DOUBLE) AS api_ms,
           json_extract(json, '$.ek') AS ek,
           {j('$.sema')} AS sema
         FROM ham WHERE {j('$.tip')} = 'karar'
@@ -55,7 +59,10 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           {j('$.stake')} AS stake,
           {j('$.yaklasim')} AS yaklasim,
           {j('$.rol')} AS rol,
+          {j('$.bolum')} AS bolum,
           {j('$.kaynak')} AS kaynak,
+          json_extract(json, '$.oyun_ayarlari') AS oyun_ayarlari,
+          {j('$.profil_parmak_izi')} AS profil_parmak_izi,
           {j('$.gorev_id')} AS gorev_id,
           json_extract(json, '$.ajan') AS ajan,
           json_extract(json, '$.surumler') AS surumler,
@@ -71,7 +78,10 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
         f"""
         CREATE VIEW runs AS
         SELECT r.*,
-          s.durum, s.son_ante, s.son_round, s.olum_nedeni, s.hata, s.adim_sayisi, s.sure_sn
+          s.durum, s.son_ante, s.son_round, s.olum_nedeni, s.hata, s.adim_sayisi, s.sure_sn,
+          s.manipule, s.manipule_komutlari, s.sayaclar, s.lovely_log,
+          -- Geçerli: hile komutu kullanılmamış (sonu olmayan run da geçerli sayılmaz).
+          (s.durum IS NOT NULL AND NOT COALESCE(s.manipule, FALSE)) AS gecerli
         FROM run_basi r
         LEFT JOIN (
           SELECT {j('$.run_id')} AS run_id,
@@ -81,7 +91,11 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
                  {j('$.olum_nedeni')} AS olum_nedeni,
                  {j('$.hata')} AS hata,
                  CAST({j('$.adim_sayisi')} AS INTEGER) AS adim_sayisi,
-                 CAST({j('$.sure_sn')} AS DOUBLE) AS sure_sn
+                 CAST({j('$.sure_sn')} AS DOUBLE) AS sure_sn,
+                 CAST({j('$.manipule')} AS BOOLEAN) AS manipule,
+                 json_extract(json, '$.manipule_komutlari') AS manipule_komutlari,
+                 json_extract(json, '$.sayaclar') AS sayaclar,
+                 json_extract(json, '$.lovely_log') AS lovely_log
           FROM ham WHERE {j('$.tip')} = 'run_sonu'
         ) s USING (run_id)
         """
