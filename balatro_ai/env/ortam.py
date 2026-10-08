@@ -116,6 +116,7 @@ class BalatroOrtami(gym.Env):
         self._adim = 0
         self._son_gozlem_zamani = time.monotonic()
         self.run_id: str | None = None
+        self.ajan_ek: dict[str, Any] | None = None  # ajanın karar açıklaması; sonraki step'in kaydına yazılır
 
     # ------------------------------------------------------------------ gym API
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None):
@@ -335,6 +336,7 @@ class BalatroOrtami(gym.Env):
                 "otomatik": otomatik,
                 "aksiyon_id": aksiyon_id,
                 "kume": self.kume,
+                "ajan": self.ajan_ek if not otomatik else None,
                 "hedef_gereksinimi": {k: list(v) for k, v in self._hedef_gereksinimi.items()},
                 **(ek_not or {}),
             },

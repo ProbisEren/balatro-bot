@@ -79,7 +79,8 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           json_extract(json, '$.oyun') AS oyun,
           json_extract(json, '$.yapilandirma') AS yapilandirma,
           {j('$.yapilandirma_ozeti')} AS yapilandirma_ozeti,
-          {j('$.sema')} AS sema
+          {j('$.sema')} AS sema,
+          CAST(row_number() OVER (ORDER BY {j('$.baslangic')}) AS INTEGER) AS sira
         FROM basi
         """
     )
