@@ -36,7 +36,7 @@ GECIS_FAZLARI = frozenset({"HAND_PLAYED", "DRAW_TO_HAND", "NEW_ROUND", "PLAY_TAR
 # tag paketini `pack skip` ile atlamak). Cevap gelmezse durum yoklanır, değiştiyse komut başarılı sayılır.
 CEVAPSIZ_OLABILEN = frozenset({"pack"})
 CEVAP_ZAMAN_ASIMI_SN = 8.0
-HEDEF_HATASI = re.compile(r"Card '([^']+)' requires (\d+)(?:-(\d+))? target card")
+HEDEF_HATASI = re.compile(r"Card '([^']+)' requires (?:exactly )?(\d+)(?:-(\d+))? target card")
 YERLESME_KOMUTLARI = frozenset({"skip", "buy", "use", "pack", "sell", "reroll"})
 ODUL_BLIND = {"SMALL": 1.0, "BIG": 1.0, "BOSS": 3.0}
 ODUL_KAZANMA = 20.0  # docs/PLAN.md, Bölüm 7.2. Ara ölçütlere (para, ham skor) ödül verilmez.

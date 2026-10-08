@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from balatro_ai.agents.rastgele import RastgeleAjan
+from balatro_ai.agents.rutbe_grubu import RutbeGrubuAjan
 from balatro_ai.env.client import BalatroIstemci
 from balatro_ai.env.ortam import BalatroOrtami
 
@@ -28,7 +29,7 @@ def son_lovely_log() -> Path | None:
     return kayitlar[-1] if kayitlar else None
 
 
-def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan, oyun_seed: str, **secenekler) -> dict:
+def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan | RutbeGrubuAjan, oyun_seed: str, **secenekler) -> dict:
     """Tek run oynatır; özet döndürür."""
     gozlem, bilgi = env.reset(options={"oyun_seed": oyun_seed, **secenekler})
     toplam_odul, adim = 0.0, 0
@@ -52,6 +53,7 @@ def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan, oyun_seed: str, **secenekle
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--kume", choices=["dar", "tam"], default="dar")
+    ap.add_argument("--ajan", choices=["rastgele", "rutbe_grubu"], default="rastgele")
     ap.add_argument("--run", type=int, default=1, help="oynatılacak run sayısı")
     ap.add_argument("--seed-oneki", default="BOT", help="oyun seed'leri: <önek><5 haneli sıra>")
     ap.add_argument("--ajan-tohumu", type=int, default=0)
@@ -64,14 +66,14 @@ def main(argv: list[str] | None = None) -> int:
     if not istemci.saglik():
         print("Oyun/BalatroBot cevap vermiyor.", file=sys.stderr)
         return 2
-    ajan = RastgeleAjan(args.ajan_tohumu)
+    ajan = (RutbeGrubuAjan if args.ajan == "rutbe_grubu" else RastgeleAjan)(args.ajan_tohumu)
     env = BalatroOrtami(
         istemci,
         kume=args.kume,
         log_kok=args.log_dizini,
         yaklasim="A_tam" if args.kume == "tam" else "B_dar",
         ajan=ajan.bilgi(),
-        yapilandirma={"kume": args.kume, "max_adim": args.max_adim, "seed_oneki": args.seed_oneki},
+        yapilandirma={"ajan": args.ajan, "kume": args.kume, "max_adim": args.max_adim, "seed_oneki": args.seed_oneki},
         bolum=args.bolum,
         max_adim=args.max_adim,
         oyun_bilgisi=OYUN_BILGISI,

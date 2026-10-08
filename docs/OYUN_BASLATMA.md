@@ -43,3 +43,20 @@ Bazı tarotlar (`c_sun`, `c_world`, `c_empress` ...) eldeki 1-3 kartı hedef ola
 
 ### Ölçülen hız (2026-10-08, `--fast`, rastgele ajan, 6 run)
 Ortalama run süresi yaklaşık 10 sn (hepsi ilk blind'da bitti). API cevap süresi: medyan 483 ms, %95'i 1394 ms. Uzun run'ların süresi henüz ölçülmedi.
+
+## Dayanıklılık ve determinizm testleri (2026-10-08, gerçek oyun, `--fast`)
+Hile yok: `set`/`add`/`load`/`save` komutu kullanılmadı (tüm loglarda 0).
+
+| Test | Sonuç |
+|---|---|
+| Rastgele ajan, `dar` küme, 50 run | 50/50 bitti. 468 komutun 0'ı reddedildi. Takılma, çökme, zaman aşımı: 0. Run başına ort. 4,0 sn. |
+| Rastgele ajan, `tam` küme, 50 run | 50/50 bitti. 1 gerçek ret (tarot hedef sayısı). 4 cevapsız `pack` komutu toparlandı. Takılma/çökme: 0. Run başına ort. 5,3 sn. |
+| Yeniden oynatma, 20 kayıtlı run (10 dar, 10 tam) | 20/20 birebir aynı durum zinciri (aynı seed + aynı komutlar → her adımda aynı oyun durumu; kart `id` alanları hariç, onlar oturum boyu artan sayaç). |
+| Mağaza/paket/satış/reroll yolları | Rastgele ve basit ajanlar ilk blind'da ölüyor; mağaza yolu yalnızca 1 normal run'da görüldü. Skoru elle yükselten bir test betiği ile 2 run'da 209 mağaza teklifi görüldü, 16'sı alındı (joker, gezegen, tarot, kupon, 6 paket türü); bu run'lar `test_manipule` etiketli ve silindi. Mağaza kararları hile olmadan gerçek bir ajanla henüz denenmedi. |
+
+Basit test ajanı `RutbeGrubuAjan` (en büyük aynı rütbeli grubu oynar) öğrenmez ve puan hesaplamaz; yalnızca ortamı sınamak içindir. 19 run'ında en yüksek skor 700 oldu.
+
+### Bulunan ve düzeltilen hatalar
+- DuckDB görünümünde JSON `null` SQL'de gerçek `NULL` olmuyordu: "reddedilen komut" sayımı her komutu sayıyordu. Düzeltildi (`hata`, `cevap`, `komut`, `secenekler`) ve regresyon testi eklendi.
+- Tarot hedef sayısı hata mesajı iki biçimde geliyor (`1-3` ve `exactly 2`). Düzenli ifade yalnızca birincisini tanıyordu.
+- `test_manipule` rolü ile çalıştırılan run'lar artık `runs.gecerli = false`.

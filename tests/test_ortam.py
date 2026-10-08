@@ -187,3 +187,17 @@ def test_cevap_gelmeyen_pack_komutu_durum_degistiyse_basarili_sayilir(tmp_path):
         "WHERE json_extract_string(komut, '$.yontem') = 'pack'"
     ).fetchone()[0]
     assert ek == "true"
+
+
+@pytest.mark.parametrize(
+    ("mesaj", "beklenen"),
+    [
+        ("Card 'c_sun' requires 1-3 target card(s). Provided: 0", ("c_sun", (1, 3))),
+        ("Card 'c_death' requires exactly 2 target card(s). Provided: 0", ("c_death", (2, 2))),
+        ("Card 'c_lovers' requires exactly 1 target card(s). Provided: 0", ("c_lovers", (1, 1))),
+    ],
+)
+def test_hedef_hata_mesaji_bicimleri(mesaj, beklenen):
+    env = _ortam(kume="tam")
+    env._hedef_ogren(mesaj)
+    assert env._hedef_gereksinimi == {beklenen[0]: beklenen[1]}

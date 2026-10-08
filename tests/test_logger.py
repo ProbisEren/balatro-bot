@@ -417,3 +417,25 @@ def test_sayaclar_ve_lovely_log_ozeti(tmp_path):
     assert json.loads(sayaclar) == {"zaman_asimi": 1, "yeniden_deneme": 2, "oyun_cokmesi": 0, "mod_hatasi": 0}
     assert json.loads(lovely_ozet)["hata_satiri"] == 1  # yalnızca " ERROR " biçimli satır
     assert con.execute("SELECT profil_parmak_izi FROM runs").fetchone()[0] == "abc"
+
+
+def test_json_null_sql_null_olur_hatasiz_komut_hata_degildir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        _karar(log)  # hata=None, cevap=None
+        log.karar(faz="X", gozlem={}, ham_durum={}, komut={"yontem": "play", "parametreler": {}},
+                  hata={"kod": -32002, "mesaj": "x"}, cevap={"state": "A"}, secenekler=[1])
+        log.karar(faz="X", gozlem={}, ham_durum={}, komut=None)
+        log.run_bitir(durum="iptal")
+    con = baglan(tmp_path)
+    assert con.execute("SELECT count(*) FROM decisions WHERE hata IS NOT NULL").fetchone()[0] == 1
+    assert con.execute("SELECT count(*) FROM decisions WHERE cevap IS NOT NULL").fetchone()[0] == 1
+    assert con.execute("SELECT count(*) FROM decisions WHERE komut IS NULL").fetchone()[0] == 1
+    assert con.execute("SELECT count(*) FROM decisions WHERE secenekler IS NOT NULL").fetchone()[0] == 1
+
+
+def test_test_manipule_rolu_gecersiz_sayilir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log, rol="test_manipule")
+        log.run_bitir(durum="iptal")
+    assert baglan(tmp_path).execute("SELECT gecerli FROM runs").fetchone()[0] is False
