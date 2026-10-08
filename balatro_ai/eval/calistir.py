@@ -27,6 +27,7 @@ LOVELY_LOG_DIZINI = Path.home() / "Library/Application Support/Balatro/Mods/love
 
 
 def son_lovely_log() -> Path | None:
+    """En son yazılan Lovely log dosyasını bulur (run kaydına bağlanır)."""
     kayitlar = sorted(LOVELY_LOG_DIZINI.glob("lovely-*.log"), key=lambda p: p.stat().st_mtime)
     return kayitlar[-1] if kayitlar else None
 
@@ -54,6 +55,8 @@ def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan | RutbeGrubuAjan | GreedyAja
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Komut satırı girişi: seçilen ajanı seçilen kümede N run oynatır, kayıtları yazar ve indeks tablosunu günceller.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--kume", choices=["dar", "tam"], default="dar")
     ap.add_argument("--ajan", choices=["rastgele", "rutbe_grubu", "greedy"], default="rastgele")

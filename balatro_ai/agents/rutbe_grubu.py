@@ -17,6 +17,8 @@ SIRA = {r: i for i, r in enumerate("23456789TJQKA")}
 
 
 def _secilecek_kartlar(kartlar: list[dict[str, Any]]) -> list[int]:
+    """Eldeki en büyük aynı rütbeli grupları (çift, üçlü, iki çift...) seçer; yoksa en yüksek tek kartı. Oynanacak kart indekslerini döndürür.
+    """
     n = min(len(kartlar), aksiyonlar.MAKS_EL)
     gruplar: dict[str, list[int]] = defaultdict(list)
     for i in range(n):
@@ -32,16 +34,22 @@ def _secilecek_kartlar(kartlar: list[dict[str, Any]]) -> list[int]:
 
 
 class RutbeGrubuAjan:
+    """Test ajanı: elde en büyük aynı rütbeli grubu oynar, diğer aşamalarda rastgele seçer. Öğrenmez, ortamı sınamak içindir.
+    """
     tur = "rutbe_grubu"
 
     def __init__(self, tohum: int):
+        """Ajanı verilen tohumla başlatır."""
         self.tohum = tohum
         self._rng = random.Random(tohum)
 
     def bilgi(self) -> dict[str, Any]:
+        """Run kaydındaki `ajan` alanına yazılacak kimlik bilgisini döndürür."""
         return {"tur": self.tur, "model_id": None, "rng_tohumu": self.tohum}
 
     def sec(self, gozlem: dict[str, Any], bilgi: dict[str, Any]) -> int:
+        """El seçiminde en büyük rütbe grubunu oynar; diğer aşamalarda geçerli aksiyonlardan rastgele seçer.
+        """
         gecerli = bilgi["gecerli_aksiyonlar"]
         if gozlem.get("state") == "SELECTING_HAND" and gozlem["hand"]["cards"]:
             hedef = aksiyonlar.KOMBINASYONLAR.index(tuple(_secilecek_kartlar(gozlem["hand"]["cards"])))

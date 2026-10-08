@@ -18,6 +18,8 @@ CHIP_ID = {RUTBE_ID[r]: c for r, c in RUTBE_CHIP.items()}  # rütbe kimliği -> 
 
 
 def hizli_uygun_mu(kartlar: Sequence[Kart]) -> bool:
+    """Kartlar hızlı hesaplayıcıya uygun mu: geliştirme, baskı, mühür, debuff ve tekrarlı kart yok.
+    """
     gorulen: set[tuple[str, str]] = set()
     for k in kartlar:
         if k.gelistirme or k.baski or k.muhur or k.debuff or k.kalici_chip:
@@ -37,11 +39,13 @@ def en_iyi_skor(kartlar: Sequence[Kart], el_degerleri: dict[str, tuple[float, fl
         sayi[r] = sayi.get(r, 0) + 1
 
     def deger(tur: str) -> tuple[float, float]:
+        """Bir el türünün (chips, mult) değeri; verilmemişse oyunun seviye 1 tablosu."""
         return el_degerleri.get(tur) or (float(EL_TABLOSU[tur][0]), float(EL_TABLOSU[tur][1]))
 
     en = 0.0
 
     def aday(tur: str, chip_toplami: int) -> None:
+        """Bir el türü adayının skorunu hesaplayıp şu ana kadarki en iyisiyle karşılaştırır."""
         nonlocal en
         c, m = deger(tur)
         s = (c + chip_toplami) * m

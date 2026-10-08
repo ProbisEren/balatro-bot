@@ -1,3 +1,5 @@
+"""Run logger'ının (kayıt kuralları, bütünlük alanları) ve DuckDB görünümlerinin testleri."""
+
 import json
 
 import pytest
@@ -10,6 +12,7 @@ CFG = {"rastgele_tohum": 1, "b": 2}
 
 
 def _baslat(log, **kw):
+    """Test run'ını örnek ajan, seed ve ayarlarla başlatır."""
     log.run_basla(
         seed="TEST0001", deste="RED", stake="WHITE", yaklasim="B_dar",
         ajan=AJAN, yapilandirma=CFG, oyun={"mod": "balatrobot 1.5.2"}, **kw,
@@ -17,6 +20,7 @@ def _baslat(log, **kw):
 
 
 def _karar(log, **kw):
+    """Örnek bir oyna kararı kaydı yazar."""
     return log.karar(
         faz="SELECTING_HAND", gozlem={"money": 4}, komut={"yontem": "play", "parametreler": {"cards": [0]}},
         ham_durum={"seed": "TEST0001", "money": 4}, sure_ms=1.5, **kw,
@@ -24,6 +28,8 @@ def _karar(log, **kw):
 
 
 def test_tam_run_kaydi_satirlari(tmp_path):
+    """Bir run'ın dosyasında run_basi, karar ve run_sonu kayıtlarının doğru sırayla ve alanlarla yazıldığını doğrular.
+    """
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         assert _karar(log) == 1
@@ -39,6 +45,7 @@ def test_tam_run_kaydi_satirlari(tmp_path):
 
 
 def test_var_olan_run_dosyasi_degistirilemez(tmp_path):
+    """Var olan bir run kaydının yeniden açılıp değiştirilemediğini doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         log.run_bitir(durum="iptal")
@@ -47,11 +54,13 @@ def test_var_olan_run_dosyasi_degistirilemez(tmp_path):
 
 
 def test_baslamadan_karar_yazilamaz(tmp_path):
+    """run_basla çağrılmadan karar yazılamadığını doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log, pytest.raises(LoggerHatasi):
         _karar(log)
 
 
 def test_bitis_sonrasi_yazilamaz(tmp_path):
+    """Run bittikten sonra yeni kayıt yazılamadığını doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         log.run_bitir(durum="kazandi")
@@ -60,6 +69,7 @@ def test_bitis_sonrasi_yazilamaz(tmp_path):
 
 
 def test_istisna_olursa_run_sonu_hata_olarak_yazilir(tmp_path):
+    """Blok içinde istisna olursa run_sonu kaydının `hata` olarak yazıldığını doğrular."""
     with pytest.raises(RuntimeError), RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         _karar(log)
@@ -69,6 +79,7 @@ def test_istisna_olursa_run_sonu_hata_olarak_yazilir(tmp_path):
 
 
 def test_gecersiz_girdiler_reddedilir(tmp_path):
+    """Eksik ajan, geçersiz komut ve bilinmeyen sonuç durumunun reddedildiğini doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         with pytest.raises(LoggerHatasi):
             log.run_basla(seed=None, deste="RED", stake="WHITE", yaklasim="x", ajan={}, yapilandirma={})
@@ -80,10 +91,13 @@ def test_gecersiz_girdiler_reddedilir(tmp_path):
 
 
 def test_yapilandirma_ozeti_anahtar_sirasindan_bagimsiz():
+    """Yapılandırma özetinin anahtar sırasından bağımsız olduğunu doğrular."""
     assert yapilandirma_ozeti({"a": 1, "b": 2}) == yapilandirma_ozeti({"b": 2, "a": 1})
 
 
 def test_duckdb_ile_sorgulanir(tmp_path):
+    """Kayıtların DuckDB ile sorgulanabildiğini, yarım kalan run'ın sonucunun boş olduğunu doğrular.
+    """
     for rid, durum, ante in (("r1", "kaybetti", 2), ("r2", "kazandi", 8)):
         with RunLogger(tmp_path, run_id=rid) as log:
             _baslat(log)
@@ -111,6 +125,7 @@ def test_duckdb_ile_sorgulanir(tmp_path):
 
 
 def _durum_magaza():
+    """Mağaza, kupon ve paket teklifleri içeren örnek bir ham durum üretir."""
     k = lambda key, fiyat: {"key": key, "label": key.upper(), "cost": {"buy": fiyat}}
     return {
         "money": 10,
@@ -121,6 +136,8 @@ def _durum_magaza():
 
 
 def test_magazada_gorulen_ve_alinmayan_teklifler_sorgulanir(tmp_path):
+    """Mağazada görülen teklifler ve alınıp alınmadıklarının `shop_teklifleri` görünümünde doğru olduğunu doğrular.
+    """
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         log.karar(
@@ -141,6 +158,8 @@ def test_magazada_gorulen_ve_alinmayan_teklifler_sorgulanir(tmp_path):
 
 
 def test_pakette_gorulen_ve_secilen_kartlar(tmp_path):
+    """Paket kartlarının ve hangisinin seçildiğinin `paket_icerikleri` görünümünde doğru olduğunu doğrular.
+    """
     kartlar = [{"key": f"c_{i}", "label": f"P{i}", "value": {"effect": "x"}} for i in range(5)]
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
@@ -157,6 +176,7 @@ def test_pakette_gorulen_ve_secilen_kartlar(tmp_path):
 
 
 def test_oynanan_eller_kartlariyla_ve_skor_degisimiyle(tmp_path):
+    """`eller` görünümünün oynanan kartları ve skor değişimini doğru verdiğini doğrular."""
     el = [{"key": k} for k in ("S_A", "D_J", "C_9", "D_9")]
     once = {"hand": {"cards": el}, "round": {"hands_left": 4, "discards_left": 3, "chips": 0}}
     sonra = {"round": {"chips": 56}}
@@ -174,6 +194,7 @@ def test_oynanan_eller_kartlariyla_ve_skor_degisimiyle(tmp_path):
 
 
 def test_reddedilen_komut_hatasi_kaydedilir(tmp_path):
+    """Oyunun reddettiği komutun hata kodunun kayda yazıldığını doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         log.karar(
@@ -189,12 +210,14 @@ def test_reddedilen_komut_hatasi_kaydedilir(tmp_path):
 
 
 def _gercek_durum():
+    """Gerçek oyundan alınmış kayıtlı bir el durumunu yükler."""
     from pathlib import Path
 
     return json.loads((Path(__file__).parent / "veri" / "durum_el_secimi.json").read_text())
 
 
 def test_oynanan_elin_turu_ve_cekilen_kartlar_gercek_durumdan(tmp_path):
+    """Gerçek durumla, oynanan elin türünün ve çekilen yeni kartların doğru bulunduğunu doğrular."""
     once = _gercek_durum()
     el_idler = [k["id"] for k in once["hand"]["cards"]]
     # İndeks 2 ve 3 (C_9, D_9) oynanır: Pair. İki yeni kart gelir.
@@ -222,6 +245,7 @@ def test_oynanan_elin_turu_ve_cekilen_kartlar_gercek_durumdan(tmp_path):
 
 
 def test_discard_el_turu_bos_ve_cekilen_dolu(tmp_path):
+    """Discard işleminde el türünün boş, çekilen kartların dolu olduğunu doğrular."""
     once = _gercek_durum()
     sonra = json.loads(json.dumps(once))
     sonra["hand"]["cards"] = sonra["hand"]["cards"][2:] + [{"id": 9001, "key": "H_2"}, {"id": 9002, "key": "S_3"}]
@@ -238,6 +262,8 @@ def test_discard_el_turu_bos_ve_cekilen_dolu(tmp_path):
 
 
 def test_tuketilebilir_kullanimi_eldeki_ve_paketten(tmp_path):
+    """Tüketilebilir kullanımının eldeki ve paketten, hedef kartlarıyla birlikte görünümde çıktığını doğrular.
+    """
     durum = {
         "hand": {"cards": [{"key": "S_A"}, {"key": "D_J"}, {"key": "C_9"}]},
         "consumables": {"cards": [{"key": "c_magician"}, {"key": "c_hermit"}]},
@@ -259,6 +285,8 @@ def test_tuketilebilir_kullanimi_eldeki_ve_paketten(tmp_path):
 
 
 def test_satislar_joker_ve_tuketilebilir(tmp_path):
+    """Joker ve tüketilebilir satışlarının fiyatıyla birlikte `satislar` görünümünde çıktığını doğrular.
+    """
     durum = {
         "jokers": {"cards": [{"key": "j_joker", "cost": {"sell": 2}}]},
         "consumables": {"cards": [{"key": "c_fool", "cost": {"sell": 1}}]},
@@ -277,6 +305,7 @@ def test_satislar_joker_ve_tuketilebilir(tmp_path):
 
 
 def test_elde_tutulan_kartlar_secilmeyenler(tmp_path):
+    """Oynanmayan, elde tutulan kartların `tutulan` sütununda doğru listelendiğini doğrular."""
     once = _gercek_durum()
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
@@ -288,6 +317,7 @@ def test_elde_tutulan_kartlar_secilmeyenler(tmp_path):
 
 
 def test_elde_tutulan_ve_kullanilan_tuketilebilirler(tmp_path):
+    """Elde duran tüketilebilirlerin kullanıldı/tutuldu bilgisinin doğru olduğunu doğrular."""
     durum = {"consumables": {"cards": [
         {"key": "c_magician", "label": "Magician"}, {"key": "c_mercury", "label": "Mercury"}]}}
     with RunLogger(tmp_path, run_id="r1") as log:
@@ -307,6 +337,7 @@ def test_elde_tutulan_ve_kullanilan_tuketilebilirler(tmp_path):
 
 
 def test_secenekler_kaydedilir_ve_sorgulanir(tmp_path):
+    """Sunulan seçeneklerin kayda yazıldığını ve sorgulanabildiğini doğrular."""
     secenekler = [{"yontem": "play", "parametreler": {"cards": [i]}} for i in range(3)]
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
@@ -323,6 +354,7 @@ def test_secenekler_kaydedilir_ve_sorgulanir(tmp_path):
 
 
 def test_gozlemde_seed_varsa_kayit_reddedilir(tmp_path):
+    """Gözlemde seed varsa kaydın yazılmadan reddedildiğini doğrular (adil oyun koruması)."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         with pytest.raises(LoggerHatasi, match="seed"):
@@ -331,6 +363,7 @@ def test_gozlemde_seed_varsa_kayit_reddedilir(tmp_path):
 
 
 def test_gozlemde_sirasiz_deste_reddedilir(tmp_path):
+    """Gözlemdeki deste sıralı değilse (çekiliş sırası sızıyor) kaydın reddedildiğini doğrular."""
     deste = {"cards": {"cards": [{"key": "S_A", "id": 2}, {"key": "C_2", "id": 1}]}}
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
@@ -339,6 +372,7 @@ def test_gozlemde_sirasiz_deste_reddedilir(tmp_path):
 
 
 def test_gercek_filtrenin_ciktisi_korumadan_gecer_ham_durum_gecmez(tmp_path):
+    """Gerçek filtrenin çıktısının korumadan geçtiğini, ham durumun geçmediğini doğrular."""
     from balatro_ai.env.gozlem import insan_gozlemi
 
     ham = _gercek_durum()
@@ -350,6 +384,7 @@ def test_gercek_filtrenin_ciktisi_korumadan_gecer_ham_durum_gecmez(tmp_path):
 
 
 def test_hile_komutu_run_i_gecersiz_isaretler(tmp_path):
+    """Hile komutu kullanılan run'ın `gecerli` olmadığını doğrular."""
     with RunLogger(tmp_path, run_id="temiz") as log:
         _baslat(log)
         _karar(log)
@@ -367,6 +402,7 @@ def test_hile_komutu_run_i_gecersiz_isaretler(tmp_path):
 
 
 def test_yarim_kalan_run_gecerli_sayilmaz(tmp_path):
+    """Sonucu yazılmamış yarım run'ın geçerli sayılmadığını doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         _karar(log)
@@ -375,6 +411,8 @@ def test_yarim_kalan_run_gecerli_sayilmaz(tmp_path):
 
 
 def test_seed_bolumu_zorunlu_ve_gecerli_degerler(tmp_path):
+    """Seed bölümünün (geliştirme, eğitim, doğrulama, test) doğrulandığını ve kaydedildiğini doğrular.
+    """
     with RunLogger(tmp_path, run_id="r1") as log:
         with pytest.raises(LoggerHatasi, match="bölüm"):
             log.run_basla(seed="S", deste="RED", stake="WHITE", yaklasim="x", ajan=AJAN,
@@ -385,6 +423,7 @@ def test_seed_bolumu_zorunlu_ve_gecerli_degerler(tmp_path):
 
 
 def test_durum_ozetleri_ayni_durumda_ayni(tmp_path):
+    """Aynı ham durumun aynı sha256 özetini verdiğini doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         _karar(log)
@@ -395,6 +434,7 @@ def test_durum_ozetleri_ayni_durumda_ayni(tmp_path):
 
 
 def test_sureler_ayri_kaydedilir(tmp_path):
+    """Toplam, bot ve API sürelerinin ayrı alanlarda kaydedildiğini doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         log.karar(faz="X", gozlem={}, ham_durum={}, komut=None, sure_ms=10.0, bot_ms=3.0, api_ms=7.0)
@@ -403,6 +443,7 @@ def test_sureler_ayri_kaydedilir(tmp_path):
 
 
 def test_sayaclar_ve_lovely_log_ozeti(tmp_path):
+    """Hata sayaçlarının ve Lovely log özetinin run sonunda yazıldığını doğrular."""
     lovely = tmp_path / "lovely.log"
     lovely.write_text("INFO - ok\nERROR - bir hata\nINFO - x\n ERROR bir daha\n")
     with RunLogger(tmp_path / "veri", run_id="r1") as log:
@@ -420,6 +461,8 @@ def test_sayaclar_ve_lovely_log_ozeti(tmp_path):
 
 
 def test_json_null_sql_null_olur_hatasiz_komut_hata_degildir(tmp_path):
+    """JSON null değerlerinin SQL'de gerçek NULL olduğunu doğrular (hatasız komut hata sayılmamalı).
+    """
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log)
         _karar(log)  # hata=None, cevap=None
@@ -435,6 +478,7 @@ def test_json_null_sql_null_olur_hatasiz_komut_hata_degildir(tmp_path):
 
 
 def test_test_manipule_rolu_gecersiz_sayilir(tmp_path):
+    """`test_manipule` rolündeki run'ın geçerli sayılmadığını doğrular."""
     with RunLogger(tmp_path, run_id="r1") as log:
         _baslat(log, rol="test_manipule")
         log.run_bitir(durum="iptal")

@@ -27,6 +27,8 @@ def sonraki_deney_dizini(kok: str | Path, ajan: str, kume: str, ad: str) -> Path
 
 
 def tablo(kok: str | Path = "veri") -> str:
+    """Deney klasörlerinden Markdown özet tablosunu (ajan, küme, run sayısı, ort. ante...) üretir.
+    """
     kok = Path(kok)
     satirlar = [
         "# Deney klasörleri",
@@ -52,12 +54,14 @@ def tablo(kok: str | Path = "veri") -> str:
 
 
 def yaz(kok: str | Path = "veri") -> Path:
+    """Özet tabloyu `<kök>/INDEKS.md` dosyasına yazar."""
     yol = Path(kok) / "INDEKS.md"
     yol.write_text(tablo(kok), encoding="utf-8")
     return yol
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Komut satırı girişi: tabloyu yeniden üretip ekrana yazar."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--kok", default="veri")
     args = ap.parse_args(argv)

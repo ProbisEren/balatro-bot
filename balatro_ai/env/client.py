@@ -51,7 +51,10 @@ class ProtokolHatasi(BalatroHatasi):
 
 
 class RpcHatasi(BalatroHatasi):
+    """Oyunun (BalatroBot) döndürdüğü JSON-RPC hatası; hata kodunu, mesajını ve varsa ek verisini taşır.
+    """
     def __init__(self, kod: int, mesaj: str, veri: Any = None):
+        """Hata kodu, mesajı ve ek veriyi saklar; metin olarak `[kod] mesaj` gösterir."""
         super().__init__(f"[{kod}] {mesaj}")
         self.kod = kod
         self.mesaj = mesaj
@@ -59,19 +62,20 @@ class RpcHatasi(BalatroHatasi):
 
 
 class IcHata(RpcHatasi):  # -32000
-    pass
+    """-32000: modun içinde beklenmeyen hata."""
 
 
 class GecersizIstek(RpcHatasi):  # -32001
-    pass
+    """-32001: komutun parametreleri geçersiz."""
 
 
 class GecersizDurum(RpcHatasi):  # -32002 (oyun şu an bu aksiyona uygun değil)
-    pass
+    """-32002: oyun şu an bu komuta uygun değil."""
 
 
 class IzinVerilmedi(RpcHatasi):  # -32003
-    pass
+    """-32003 veya istemci tarafı yasak: komut botun kullanabileceği oyun aksiyonları arasında değil.
+    """
 
 
 _HATA_SINIFLARI = {
@@ -83,7 +87,10 @@ _HATA_SINIFLARI = {
 
 
 class BalatroIstemci:
+    """BalatroBot'a JSON-RPC ile bağlanan istemci; yalnızca izinli oyun aksiyonlarını ve okumaları gönderir.
+    """
     def __init__(self, adres: str = VARSAYILAN_ADRES, zaman_asimi: float = 30.0):
+        """İstemciyi adres ve zaman aşımı ile kurar, istek kimliği sayacını başlatır."""
         self.adres = adres
         self.zaman_asimi = zaman_asimi
         self._id = itertools.count(1)
@@ -94,6 +101,8 @@ class BalatroIstemci:
         parametreler: dict[str, Any] | None = None,
         zaman_asimi: float | None = None,
     ) -> Any:
+        """Tek bir JSON-RPC çağrısı yapar; beyaz listeyi, hata sınıflarını ve cevap doğrulamasını (sürüm, kimlik) burada uygular.
+        """
         if yontem not in IZINLI_AKSIYONLAR and yontem not in IZINLI_OKUMALAR:
             raise IzinVerilmedi(-32003, f"'{yontem}' bu istemcide izinli değil (adil oyun kuralı)")
         govde: dict[str, Any] = {"jsonrpc": "2.0", "method": yontem, "id": next(self._id)}
@@ -144,6 +153,7 @@ class BalatroIstemci:
         return self._cagri("health").get("status") == "ok"
 
     def durum(self) -> dict[str, Any]:
+        """Oyunun ham durumunu döndürür (`gamestate`)."""
         return self._cagri("gamestate")
 
     # --- aksiyonlar ---
@@ -154,18 +164,23 @@ class BalatroIstemci:
         return self._cagri("start", p)
 
     def blind_sec(self) -> dict[str, Any]:
+        """Sıradaki blind'ı seçer (`select`)."""
         return self._cagri("select")
 
     def blind_atla(self) -> dict[str, Any]:
+        """Sıradaki blind'ı atlar ve tag kazanır (`skip`)."""
         return self._cagri("skip")
 
     def oyna(self, kartlar: list[int]) -> dict[str, Any]:
+        """Eldeki verilen indeksli kartları oynar (`play`)."""
         return self._cagri("play", {"cards": kartlar})
 
     def at(self, kartlar: list[int]) -> dict[str, Any]:
+        """Eldeki verilen indeksli kartları atar (`discard`)."""
         return self._cagri("discard", {"cards": kartlar})
 
     def odul_al(self) -> dict[str, Any]:
+        """Round ödülünü alıp mağazaya geçer (`cash_out`)."""
         return self._cagri("cash_out")
 
     def satin_al(self, **hedef: int) -> dict[str, Any]:
@@ -177,12 +192,15 @@ class BalatroIstemci:
         return self._cagri("sell", hedef)
 
     def yenile(self) -> dict[str, Any]:
+        """Mağazayı yeniler (`reroll`)."""
         return self._cagri("reroll")
 
     def sonraki_tur(self) -> dict[str, Any]:
+        """Mağazadan çıkıp blind seçimine geçer (`next_round`)."""
         return self._cagri("next_round")
 
     def kullan(self, tuketilebilir: int, kartlar: list[int] | None = None) -> dict[str, Any]:
+        """Bir tüketilebilir kartı (tarot, gezegen, spektral) kullanır (`use`)."""
         p: dict[str, Any] = {"consumable": tuketilebilir}
         if kartlar is not None:
             p["cards"] = kartlar
@@ -209,4 +227,5 @@ class BalatroIstemci:
         return self._cagri("pack", p)
 
     def menuye_don(self) -> dict[str, Any]:
+        """Ana menüye döner (`menu`)."""
         return self._cagri("menu")

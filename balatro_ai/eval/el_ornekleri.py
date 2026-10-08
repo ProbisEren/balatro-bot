@@ -14,6 +14,8 @@ from typing import Any
 
 
 def run_dosyasindan(dosya: Path) -> list[dict[str, Any]]:
+    """Tek bir run kaydındaki her `play` komutunu (kartlar, el türü, skor farkı, blind, jokerler) bir örnek olarak çıkarır.
+    """
     ornekler = []
     for satir in dosya.read_text(encoding="utf-8").splitlines():
         k = json.loads(satir)
@@ -52,6 +54,7 @@ def run_dosyasindan(dosya: Path) -> list[dict[str, Any]]:
 
 
 def topla(dizinler: list[str]) -> list[dict[str, Any]]:
+    """Verilen klasörlerdeki tüm run kayıtlarından örnekleri birleştirir."""
     tum: list[dict[str, Any]] = []
     for d in dizinler:
         for f in sorted(Path(d).glob("*.jsonl")):
@@ -60,6 +63,7 @@ def topla(dizinler: list[str]) -> list[dict[str, Any]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Komut satırı girişi: klasörlerdeki run'lardan örnekleri çıkarıp JSON dosyasına yazar."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("dizinler", nargs="+")
     ap.add_argument("-o", "--cikti", required=True)

@@ -1,3 +1,5 @@
+"""Balatro AI paketi: Balatro'yu oynayan botun kodu. `__version__`, pyproject.toml'daki sürümden okunur."""
+
 from importlib.metadata import PackageNotFoundError, version
 
 try:
