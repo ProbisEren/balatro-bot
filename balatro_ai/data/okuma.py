@@ -21,7 +21,17 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
     con.execute(
         f"CREATE VIEW ham AS SELECT json, filename FROM read_ndjson_objects('{desen}', filename=true)"
     )
-    j = lambda yol: f"json_extract_string(json, '{yol}')"
+
+    def j(yol: str) -> str:
+        return f"json_extract_string(json, '{yol}')"
+
+    def jn(yol: str) -> str:
+        """JSON `null` değerini gerçek SQL NULL'a çevirir (aksi halde `IS NOT NULL` her satırda doğru olur)."""
+        return (
+            f"CASE WHEN json_type(json_extract(json, '{yol}')) = 'NULL' THEN NULL "
+            f"ELSE json_extract(json, '{yol}') END"
+        )
+
     con.execute(
         f"""
         CREATE VIEW decisions AS
@@ -31,11 +41,11 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           CAST({j('$.zaman')} AS TIMESTAMPTZ) AS zaman,
           {j('$.faz')} AS faz,
           json_extract(json, '$.gozlem') AS gozlem,
-          json_extract(json, '$.komut') AS komut,
+          {jn('$.komut')} AS komut,
           json_extract(json, '$.ham_durum') AS ham_durum,
-          json_extract(json, '$.cevap') AS cevap,
-          json_extract(json, '$.hata') AS hata,
-          json_extract(json, '$.secenekler') AS secenekler,
+          {jn('$.cevap')} AS cevap,
+          {jn('$.hata')} AS hata,
+          {jn('$.secenekler')} AS secenekler,
           {j('$.ham_durum_ozeti')} AS ham_durum_ozeti,
           {j('$.cevap_ozeti')} AS cevap_ozeti,
           CAST({j('$.sure_ms')} AS DOUBLE) AS sure_ms,
@@ -80,8 +90,8 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
         SELECT r.*,
           s.durum, s.son_ante, s.son_round, s.olum_nedeni, s.hata, s.adim_sayisi, s.sure_sn,
           s.manipule, s.manipule_komutlari, s.sayaclar, s.lovely_log,
-          -- Geçerli: hile komutu kullanılmamış (sonu olmayan run da geçerli sayılmaz).
-          (s.durum IS NOT NULL AND NOT COALESCE(s.manipule, FALSE)) AS gecerli
+          -- Geçerli: hile komutu kullanılmamış, `test_manipule` rolü değil, run bitmiş.
+          (s.durum IS NOT NULL AND NOT COALESCE(s.manipule, FALSE) AND r.rol <> 'test_manipule') AS gecerli
         FROM run_basi r
         LEFT JOIN (
           SELECT {j('$.run_id')} AS run_id,
