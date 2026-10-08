@@ -33,7 +33,8 @@ from balatro_ai.sim.tur import deger as tur_degeri
 
 STANDART_DESTE = tuple(Kart(r, s) for s in "SHCD" for r in RUTBE_ID)
 ILERLEME_AGIRLIGI = 0.25  # mağaza değerlemesinde geçilemeyen blind'ın kısmi değeri: bu ağırlık x (skor/hedef). TAHMİN, deneyle ayarlanacak
-HAVUZ_ORNEK = 6  # yenileme değerlemesinde, daha önce görülmüş öğelerden her seferinde değerlenen en fazla öğe sayısı
+MAGAZA_BUTCE_SN = 1.5  # mağaza kararında aday değerlemesine ayrılan süre (taban hesabından sonra); aşılırsa kalan adaylar atlanır. TAHMİN
+HAVUZ_ORNEK = 3  # yenileme değerlemesinde, daha önce görülmüş öğelerden her seferinde değerlenen en fazla öğe sayısı
 # Etkisi oyunun card.lua `Card:apply_to_run` kodundan okunan kuponlar: (ek el hakkı, ek discard hakkı, ek el boyutu).
 # Diğer kuponlar (Telescope, Hieroglyph, Observatory, Hone...) henüz modellenmediği için alınmaz.
 KUPON_ETKILERI = {
@@ -46,6 +47,10 @@ ON_FILTRE_DUNYA = 6  # aday önerirken kullanılan dünya sayısı
 def _duz(k: Kart) -> Kart:
     """Geliştirilmiş kartları düz kopyasıyla değiştirir (simülasyon düz kart varsayar); debuff bayrağı korunur."""
     return Kart(k.rutbe, k.renk, debuff=k.debuff)
+
+
+class _ButceAsildi(Exception):
+    """Mağaza değerlemesinin süre bütçesi aşıldı; kalan adaylar değerlendirilmeden karar verilir."""
 
 
 class PlanlayiciAjan(GreedyAjan):
@@ -195,17 +200,37 @@ class PlanlayiciAjan(GreedyAjan):
         sahip = self._jokerler(g)
         jbaglam = self._baglam(g)
 
+        onbellek: dict[Any, float] = {}
+        son_tarih: list[float | None] = [None]  # taban hesaplandıktan sonra ayarlanan süre sınırı
+
         def beklenen(
             d: dict[str, tuple[float, float]], jk: tuple[joker_modulu.Joker, ...] | None = None,
             ek_el: int = 0, ek_discard: int = 0, ek_boyut: int = 0,
         ) -> float:
-            """Sonraki blind'ların beklenen geçilme değeri (kısmi ilerleme dahil); el/discard/el boyutu artışı kupon değerlemesi içindir."""
+            """Sonraki blind'ların beklenen geçilme değeri (kısmi ilerleme dahil); el/discard/el boyutu artışı kupon değerlemesi içindir.
+
+            Süre bütçesi aşılmışsa `_ButceAsildi` fırlatır (aynı girdiler için sonuç önbellekten gelir).
+            """
+            anahtar = (tuple(sorted(d.items())), jk, ek_el, ek_discard, ek_boyut)
+            if anahtar in onbellek:
+                return onbellek[anahtar]
+            if son_tarih[0] is not None and time.monotonic() > son_tarih[0]:
+                raise _ButceAsildi
+            onbellek[anahtar] = sonuc = _beklenen_hesapla(d, jk, ek_el, ek_discard, ek_boyut)
+            return sonuc
+
+        def _beklenen_hesapla(
+            d: dict[str, tuple[float, float]], jk: tuple[joker_modulu.Joker, ...] | None,
+            ek_el: int, ek_discard: int, ek_boyut: int,
+        ) -> float:
+            """`beklenen`in asıl hesabı (rollout'lar)."""
             return magaza_modulu.beklenen_gecilen_blind(
                 desteler, d, hedefler, el_hakki + ek_el, discard_hakki + ek_discard, el_boyu + ek_boyut,
                 sahip if jk is None else jk, jbaglam, ILERLEME_AGIRLIGI,
             )
 
         taban = beklenen(degerler)
+        son_tarih[0] = time.monotonic() + MAGAZA_BUTCE_SN if faz == "SHOP" else None  # paket açıkken bütçe yok (karar zorunlu)
         etki: dict[str, float] = {}
 
         def gezegen_etkisi(anahtar: str) -> float:
@@ -262,42 +287,48 @@ class PlanlayiciAjan(GreedyAjan):
         ]
         satilabilir = [(i, j, jokerler_durum["cards"][i]["cost"]["sell"]) for i, j in sahip_kartlar if joker_modulu.desteklenen_mi(j)]
         takaslar: dict[int, tuple[float, int]] = {}  # mağaza kartı indeksi -> (net, satılacak joker indeksi)
-        for i, c in enumerate(magaza_kartlari):  # markette görünen joker: etkisi tanımlıysa değeri hesapla
-            fiyat = c["cost"]["buy"]
-            if not str(c.get("key", "")).startswith("j_") or not joker_modulu.desteklenen_mi(joker_modulu.apiden(c)):
-                continue
-            joker = joker_modulu.apiden(c)
-            if not slot_dolu and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
-                delta = beklenen(degerler, (*sahip, joker)) - taban
-                adaylar2.append((delta - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
-            elif slot_dolu:  # yuva dolu: elimizdeki tanımlı bir jokeri satıp yerine bunu almak
+        try:  # süre bütçesi aşılırsa kalan adaylar atlanır (en ucuz/en olası değerlemeler önce yapılır)
+            for i, c in enumerate(magaza_kartlari):
+                fiyat = c["cost"]["buy"]
+                if c.get("key") in gezegen_modulu.GEZEGEN_EL and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
+                    adaylar2.append((gezegen_etkisi(c["key"]) - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
+            for i, c in enumerate((g.get("packs") or {}).get("cards", [])[: aksiyonlar.MAKS_MAGAZA_PAKET]):
+                parcalar = c.get("key", "").split("_")  # p_celestial_normal_1
+                fiyat = c["cost"]["buy"]
+                if len(parcalar) >= 3 and parcalar[1] == "celestial" and fiyat <= para and aksiyonlar._AL_PAKET + i in gecerli:
+                    deltalar = {k: gezegen_etkisi(k) for k in gezegen_modulu.YAYGIN_GEZEGENLER}
+                    beklenen_etki = gezegen_modulu.paket_beklenen_degeri(deltalar, parcalar[2], rng)
+                    adaylar2.append((beklenen_etki - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_PAKET + i, c["key"]))
+            for i, c in enumerate((g.get("vouchers") or {}).get("cards", [])[: aksiyonlar.MAKS_KUPON]):  # kupon: etkisi oyun kodundan okunanlar
+                fiyat = c["cost"]["buy"]
+                etki_k = KUPON_ETKILERI.get(c.get("key", ""))
+                if etki_k and fiyat <= para and aksiyonlar._AL_KUPON + i in gecerli:
+                    delta = beklenen(degerler, None, *etki_k) - taban
+                    adaylar2.append((delta - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KUPON + i, c["key"]))
+            for i, c in enumerate(magaza_kartlari):  # markette görünen joker: etkisi tanımlıysa değeri hesapla
+                fiyat = c["cost"]["buy"]
+                if not str(c.get("key", "")).startswith("j_") or not joker_modulu.desteklenen_mi(joker_modulu.apiden(c)):
+                    continue
+                joker = joker_modulu.apiden(c)
+                if not slot_dolu and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
+                    delta = beklenen(degerler, (*sahip, joker)) - taban
+                    adaylar2.append((delta - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
+            for i, c in enumerate(magaza_kartlari if slot_dolu else []):  # yuva dolu: tanımlı bir jokeri satıp yerine bunu almak (en pahalı değerleme, en sonda)
+                fiyat = c["cost"]["buy"]
+                if not str(c.get("key", "")).startswith("j_") or not joker_modulu.desteklenen_mi(joker_modulu.apiden(c)):
+                    continue
+                joker = joker_modulu.apiden(c)
                 for si, sj, sat in satilabilir:
                     if fiyat - sat > para:
                         continue
                     kalan_l = list(sahip)
                     kalan_l.remove(sj)  # eşit olan ilk jokeri çıkar (aynı jokerden ikisi varsa hangisi olduğu fark etmez)
-                    kalan = tuple(kalan_l)
-                    delta = beklenen(degerler, (*kalan, joker)) - taban
+                    delta = beklenen(degerler, (*kalan_l, joker)) - taban
                     net = delta - magaza_modulu.maliyet(para, max(fiyat - sat, 0))
                     if i not in takaslar or net > takaslar[i][0]:
                         takaslar[i] = (net, si)
-        for i, c in enumerate(magaza_kartlari):
-            fiyat = c["cost"]["buy"]
-            if c.get("key") in gezegen_modulu.GEZEGEN_EL and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
-                adaylar2.append((gezegen_etkisi(c["key"]) - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
-        for i, c in enumerate((g.get("packs") or {}).get("cards", [])[: aksiyonlar.MAKS_MAGAZA_PAKET]):
-            parcalar = c.get("key", "").split("_")  # p_celestial_normal_1
-            fiyat = c["cost"]["buy"]
-            if len(parcalar) >= 3 and parcalar[1] == "celestial" and fiyat <= para and aksiyonlar._AL_PAKET + i in gecerli:
-                deltalar = {k: gezegen_etkisi(k) for k in gezegen_modulu.YAYGIN_GEZEGENLER}
-                beklenen_etki = gezegen_modulu.paket_beklenen_degeri(deltalar, parcalar[2], rng)
-                adaylar2.append((beklenen_etki - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_PAKET + i, c["key"]))
-        for i, c in enumerate((g.get("vouchers") or {}).get("cards", [])[: aksiyonlar.MAKS_KUPON]):  # kupon: etkisi oyun kodundan okunanlar
-            fiyat = c["cost"]["buy"]
-            etki_k = KUPON_ETKILERI.get(c.get("key", ""))
-            if etki_k and fiyat <= para and aksiyonlar._AL_KUPON + i in gecerli:
-                delta = beklenen(degerler, None, *etki_k) - taban
-                adaylar2.append((delta - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KUPON + i, c["key"]))
+        except _ButceAsildi:
+            aciklama["butce_asildi"] = True
         aciklama["adaylar"] = [(round(v, 4), ad) for v, _, ad in sorted(adaylar2, reverse=True)[:5]]
         en_net, en_a, en_ad = max(adaylar2) if adaylar2 else (0.0, None, "")
         if takaslar:  # takas: önce satış yapılır, sonraki adımda alım
@@ -313,26 +344,30 @@ class PlanlayiciAjan(GreedyAjan):
             return en_a
         yenile = aksiyonlar._YENILE
         yenileme_bedeli = int(rnd.get("reroll_cost") or 5)
-        if yenile in gecerli and para >= yenileme_bedeli and self._gorulen:
+        if yenile in gecerli and para >= yenileme_bedeli and self._gorulen and not aciklama.get("butce_asildi"):
             # Yenileme: sonraki mağazanın içeriği bilinmez; daha önce gördüğümüz öğelerin şu anki değerinden, 2 yuvalı
             # bir mağazanın beklenen en iyi satın alma değerini kestiririz (TAHMİN: gerçek dağılım değil, gözlenen örnek).
             havuz = list(self._gorulen.items())
             rng.shuffle(havuz)
             degerli: list[float] = []
-            for anahtar, fiyat in havuz[:HAVUZ_ORNEK]:
-                if fiyat > para - yenileme_bedeli:
-                    degerli.append(0.0)
-                elif anahtar in gezegen_modulu.GEZEGEN_EL:
-                    degerli.append(max(gezegen_etkisi(anahtar) - magaza_modulu.maliyet(para, fiyat), 0.0))
-                else:
-                    joker = joker_modulu.Joker(anahtar)
-                    if slot_dolu or not joker_modulu.desteklenen_mi(joker):
+            try:
+                for anahtar, fiyat in havuz[:HAVUZ_ORNEK]:
+                    if fiyat > para - yenileme_bedeli:
                         degerli.append(0.0)
+                    elif anahtar in gezegen_modulu.GEZEGEN_EL:
+                        degerli.append(max(gezegen_etkisi(anahtar) - magaza_modulu.maliyet(para, fiyat), 0.0))
                     else:
-                        degerli.append(max(beklenen(degerler, (*sahip, joker)) - taban - magaza_modulu.maliyet(para, fiyat), 0.0))
+                        joker = joker_modulu.Joker(anahtar)
+                        if slot_dolu or not joker_modulu.desteklenen_mi(joker):
+                            degerli.append(0.0)
+                        else:
+                            degerli.append(max(beklenen(degerler, (*sahip, joker)) - taban - magaza_modulu.maliyet(para, fiyat), 0.0))
+            except _ButceAsildi:
+                aciklama["butce_asildi"] = True
+                degerli = []
             degerli.sort(reverse=True)
             beklenen_kazanc = sum(degerli[:2]) / 2 if degerli else 0.0  # yuvalardan biri ortalama böyle
-            yenileme_net = beklenen_kazanc - magaza_modulu.maliyet(para, yenileme_bedeli)
+            yenileme_net = beklenen_kazanc - magaza_modulu.maliyet(para, yenileme_bedeli) if degerli else -1.0
             aciklama["yenileme"] = {"beklenen_kazanc": round(beklenen_kazanc, 4), "net": round(yenileme_net, 4), "havuz": len(havuz)}
             if yenileme_net > 0:
                 aciklama["karar"] = "yenile"
