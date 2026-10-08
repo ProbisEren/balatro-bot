@@ -67,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--bolum", default="gelistirme", choices=["gelistirme", "egitim", "dogrulama", "test"])
     ap.add_argument("--log-dizini", default=None, help="verilmezse veri/NN_ajan_küme_<deney-adi> otomatik")
     ap.add_argument("--deney-adi", default="deney", help="otomatik klasör adının son parçası")
+    ap.add_argument("--kesif", type=float, default=0.0, help="planlayıcı: el dışı aşamalarda rastgele geçerli eylem olasılığı (ε); 0 = kapalı")
     ap.add_argument("--joker-toplama", action="store_true", help="planlayıcı: doğrulama verisi için tanımlı jokerleri değerlendirmeden satın alır")
     ap.add_argument("--max-adim", type=int, default=3000)
     args = ap.parse_args(argv)
@@ -77,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     if not istemci.saglik():
         print("Oyun/BalatroBot cevap vermiyor.", file=sys.stderr)
         return 2
-    ajan = {"rutbe_grubu": RutbeGrubuAjan, "greedy": GreedyAjan, "planlayici": PlanlayiciAjan}.get(args.ajan, RastgeleAjan)(args.ajan_tohumu, **({"joker_toplama": True} if args.joker_toplama else {}))
+    ajan = {"rutbe_grubu": RutbeGrubuAjan, "greedy": GreedyAjan, "planlayici": PlanlayiciAjan}.get(args.ajan, RastgeleAjan)(args.ajan_tohumu, **({"joker_toplama": True} if args.joker_toplama else {}), **({"kesif": args.kesif} if args.kesif else {}))
     env = BalatroOrtami(
         istemci,
         kume=args.kume,

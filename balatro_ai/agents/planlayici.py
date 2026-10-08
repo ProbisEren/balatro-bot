@@ -53,13 +53,14 @@ class PlanlayiciAjan(GreedyAjan):
 
     tur = "planlayici"
 
-    def __init__(self, tohum: int, dunya: int = 32, butce_sn: float = 2.0, aday_sayisi: int = 18, magaza: bool = True, joker_toplama: bool = False):
+    def __init__(self, tohum: int, dunya: int = 32, butce_sn: float = 2.0, aday_sayisi: int = 18, magaza: bool = True, joker_toplama: bool = False, kesif: float = 0.0):
         """`dunya`: değerlendirme dünyası sayısı; `butce_sn`: karar başına rollout süre sınırı; `aday_sayisi`: rollout'a girecek aday sayısı."""
         super().__init__(tohum, magaza=magaza)
         self.dunya = dunya
         self.butce_sn = butce_sn
         self.aday_sayisi = aday_sayisi
         self.joker_toplama = joker_toplama  # VERİ TOPLAMA modu: mağazada değerlendirmeden joker satın alır (doğrulama verisi için)
+        self.kesif = kesif  # KEŞİF (ε): el dışındaki aşamalarda bu olasılıkla, planlayıcının önerisi yerine geçerli rastgele bir eylem seçilir (veri çeşitliliği için)
         self._izle: dict[str, Any] | None = None  # son kararın izi (gizli kart havuzunu hesaplamak için)
         self._kullanilan: set[tuple[str, str]] = set()  # bu turda oynanan/atılan, kimliği görülmüş kartlar
         self._son_el: dict[str, Any] | None = None  # son el aramasının sonucu (denetim için loga yazılır)
@@ -71,7 +72,7 @@ class PlanlayiciAjan(GreedyAjan):
         return {
             "tur": self.tur, "model_id": None, "rng_tohumu": self.tohum, "dunya": self.dunya,
             "butce_sn": self.butce_sn, "aday_sayisi": self.aday_sayisi, "magaza": self.magaza,
-            "joker_toplama": self.joker_toplama, "para_degeri": magaza_modulu.PARA_DEGERI, "sonraki_blind": magaza_modulu.SONRAKI_BLIND,
+            "joker_toplama": self.joker_toplama, "kesif": self.kesif, "para_degeri": magaza_modulu.PARA_DEGERI, "sonraki_blind": magaza_modulu.SONRAKI_BLIND,
         }
 
     # ------------------------------------------------------------------ gözlemden simülasyon girdileri
@@ -137,6 +138,39 @@ class PlanlayiciAjan(GreedyAjan):
             t: (int(v.get("played", 0)), int(v.get("played_this_round", 0))) for t, v in (g.get("hands") or {}).items()
         }
         return joker_modulu.Baglam(para=int(g.get("money") or 0), sayaclar=sayaclar)
+
+    # ------------------------------------------------------------------ keşif
+    def sec(self, gozlem: dict[str, Any], bilgi: dict[str, Any]) -> int:
+        """Planlayıcının kararını verir; keşif açıksa ε olasılıkla (el oynama/atma hariç) geçerli rastgele bir eylemle değiştirir.
+
+        Keşif eylemleri: mağazadan kart/kupon/paket almak, yenilemek, tüketilebilir kullanmak, açık paketten kart seçmek veya
+        atlamak, blind atlamak, ve yuva/tüketilebilir doluysa satış. El kararları hep planlayıcıdan gelir (kazanmak için);
+        keşif kararları açıklamada `kesif` işaretiyle loglanır ki sonradan ayrıştırılabilsin.
+        """
+        a = super().sec(gozlem, bilgi)
+        if self.kesif <= 0 or self._rng.random() >= self.kesif:
+            return a
+        faz = gozlem.get("state")
+        if faz == "SELECTING_HAND":
+            yontemler = {"use"}  # elde tarot/spektral kullanmayı dene (hedefli olanlar dahil)
+        elif faz in aksiyonlar.PAKET_FAZLARI:
+            yontemler = {"pack"}
+        elif faz == "SHOP":
+            yontemler = {"buy", "reroll", "use"}
+            jk = gozlem.get("jokers") or {}
+            if int(jk.get("count") or 0) >= int(jk.get("limit") or 5):
+                yontemler.add("sell")  # satış yalnızca yuva doluyken keşfedilir
+        elif faz == "BLIND_SELECT":
+            yontemler = {"skip"}
+        else:
+            return a
+        adaylar = [x for x in bilgi["gecerli_aksiyonlar"] if aksiyonlar.komut(x)["yontem"] in yontemler]
+        if not adaylar:
+            return a
+        secilen = self._rng.choice(adaylar)
+        self.son_aciklama = {**self.son_aciklama, "kesif": True, "kesif_eps": self.kesif, "planlayici_onerisi": a,
+                             "karar": f"kesif:{aksiyonlar.komut(secilen)['yontem']}"}
+        return secilen
 
     # ------------------------------------------------------------------ mağaza ve paket kararı
     def _magaza_karari(self, g: dict[str, Any], gecerli: set[int]) -> int | None:

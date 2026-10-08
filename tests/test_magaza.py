@@ -207,3 +207,24 @@ def test_yuva_doluyken_daha_iyi_jokeri_icin_takas_yapar():
     ajan._takas_hedefi = "j_jolly"
     a2 = ajan.sec(g2, {"gecerli_aksiyonlar": aksiyonlar.gecerli(g2, "tam")})
     assert aksiyonlar.komut(a2) == {"yontem": "buy", "parametreler": {"card": 0}}
+
+
+def test_kesif_modunda_gecerli_rastgele_eylem_secer_ve_isaretler():
+    """Keşif (ε=1) açıkken mağazada geçerli bir rastgele eylemin seçildiğini ve açıklamada `kesif` ile işaretlendiğini doğrular."""
+    g = _kupon(_durum(dukkan=[("c_fool", 3, "TAROT"), ("j_blueprint", 4, "JOKER")], paketler=[("p_arcana_normal_1", 4)], para=50), "v_telescope")
+    ids = aksiyonlar.gecerli(g, "tam")
+    gorulen = set()
+    for tohum in range(30):
+        ajan = PlanlayiciAjan(tohum, kesif=1.0)
+        a = ajan.sec(g, {"gecerli_aksiyonlar": ids})
+        assert a in ids and ajan.son_aciklama["kesif"] is True and ajan.son_aciklama["karar"].startswith("kesif:")
+        gorulen.add(aksiyonlar.komut(a)["yontem"])
+    assert {"buy", "reroll"} <= gorulen  # etkisi bilinmeyen öğeler de dahil çeşitli eylemler denenir
+
+
+def test_kesif_kapaliyken_aciklamada_kesif_yok():
+    """Keşif kapalıyken (varsayılan) kararın keşif işareti taşımadığını doğrular."""
+    g = _durum(dukkan=[("c_fool", 3, "TAROT")], para=50)
+    ajan = PlanlayiciAjan(1)
+    ajan.sec(g, {"gecerli_aksiyonlar": aksiyonlar.gecerli(g, "tam")})
+    assert "kesif" not in ajan.son_aciklama
