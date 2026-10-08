@@ -166,6 +166,7 @@ class RunLogger:
         ham_durum: dict[str, Any],
         cevap: dict[str, Any] | None = None,
         hata: dict[str, Any] | None = None,
+        secenekler: list[Any] | None = None,
         sure_ms: float | None = None,
         ek: dict[str, Any] | None = None,
     ) -> int:
@@ -173,7 +174,8 @@ class RunLogger:
 
         `komut`: {"yontem": ..., "parametreler": ...}. `cevap`: komuttan sonra oyunun döndürdüğü
         ham durum (run'ın son hamlesinin sonucu da böylece kaydedilir). `hata`: oyun komutu
-        reddettiyse {"kod": ..., "mesaj": ...}.
+        reddettiyse {"kod": ..., "mesaj": ...}. `secenekler`: o anda geçerli olan tüm aksiyonlar
+        (botun seçebildiği küme); seçilmeyen alternatifleri incelemek ve pişmanlık ölçmek için.
         """
         self._kontrol_acik()
         if komut is not None and "yontem" not in komut:
@@ -192,6 +194,7 @@ class RunLogger:
                 "ham_durum": ham_durum,
                 "cevap": cevap,
                 "hata": hata,
+                "secenekler": secenekler,
                 "sure_ms": sure_ms,
                 "ek": ek or {},
             }

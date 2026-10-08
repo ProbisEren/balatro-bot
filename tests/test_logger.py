@@ -274,3 +274,46 @@ def test_satislar_joker_ve_tuketilebilir(tmp_path):
         "SELECT tur, anahtar, satis_fiyati FROM satislar ORDER BY adim"
     ).fetchall()
     assert satirlar == [("joker", "j_joker", 2), ("tuketilebilir", "c_fool", 1)]
+
+
+def test_elde_tutulan_kartlar_secilmeyenler(tmp_path):
+    once = _gercek_durum()
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SELECTING_HAND", gozlem={}, ham_durum=once,
+                  komut={"yontem": "play", "parametreler": {"cards": [2, 3]}})
+        log.run_bitir(durum="iptal")
+    tutulan = baglan(tmp_path).execute("SELECT tutulan FROM eller").fetchone()[0]
+    assert tutulan == ["S_A", "D_J", "S_8", "H_8", "C_5", "C_4"]
+
+
+def test_elde_tutulan_ve_kullanilan_tuketilebilirler(tmp_path):
+    durum = {"consumables": {"cards": [
+        {"key": "c_magician", "label": "Magician"}, {"key": "c_mercury", "label": "Mercury"}]}}
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SELECTING_HAND", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "use", "parametreler": {"consumable": 1}})
+        log.karar(faz="SELECTING_HAND", gozlem={}, ham_durum=durum,
+                  komut={"yontem": "play", "parametreler": {"cards": [0]}})
+        log.run_bitir(durum="iptal")
+    satirlar = baglan(tmp_path).execute(
+        "SELECT adim, anahtar, kullanildi, satildi FROM eldeki_tuketilebilirler ORDER BY adim, indeks"
+    ).fetchall()
+    assert satirlar == [
+        (1, "c_magician", False, False), (1, "c_mercury", True, False),
+        (2, "c_magician", False, False), (2, "c_mercury", False, False),
+    ]
+
+
+def test_secenekler_kaydedilir_ve_sorgulanir(tmp_path):
+    secenekler = [{"yontem": "play", "parametreler": {"cards": [i]}} for i in range(3)]
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SELECTING_HAND", gozlem={}, ham_durum={}, secenekler=secenekler,
+                  komut=secenekler[1])
+        log.run_bitir(durum="iptal")
+    adet = baglan(tmp_path).execute(
+        "SELECT json_array_length(secenekler) FROM decisions"
+    ).fetchone()[0]
+    assert adet == 3

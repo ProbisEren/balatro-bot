@@ -35,6 +35,7 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           json_extract(json, '$.ham_durum') AS ham_durum,
           json_extract(json, '$.cevap') AS cevap,
           json_extract(json, '$.hata') AS hata,
+          json_extract(json, '$.secenekler') AS secenekler,
           CAST({j('$.sure_ms')} AS DOUBLE) AS sure_ms,
           json_extract(json, '$.ek') AS ek,
           {j('$.sema')} AS sema
@@ -141,6 +142,18 @@ def _turetilmis_gorunumler(con: duckdb.DuckDBPyConnection) -> None:
                  > CAST(json_extract_string(d.ham_durum, '$.hands."' || k || '".played') AS INTEGER)
             )[1]
           END AS el_turu,
+          -- Elde olup seçilmeyen (tutulan) kartlar.
+          list_filter(
+            list_transform(
+              range(CAST(json_array_length(json_extract(d.ham_durum, '$.hand.cards')) AS BIGINT)),
+              i -> json_extract_string(d.ham_durum, '$.hand.cards[' || i || '].key')
+            ),
+            k -> NOT list_contains(
+              list_transform(
+                from_json(json_extract(d.komut, '$.parametreler.cards'), '["INTEGER"]'),
+                x -> json_extract_string(d.ham_durum, '$.hand.cards[' || x || '].key')),
+              k)
+          ) AS tutulan,
           -- Komuttan sonra ele yeni gelen kartlar (id farkı).
           list_transform(
             list_filter({sonraki}, c -> NOT list_contains(list_transform({onceki}, b -> b.id), c.id)),
@@ -177,6 +190,21 @@ def _turetilmis_gorunumler(con: duckdb.DuckDBPyConnection) -> None:
         FROM decisions d
         WHERE json_extract_string(d.komut, '$.yontem') = 'pack'
           AND json_extract(d.komut, '$.parametreler.card') IS NOT NULL
+        """
+    )
+    # Elimizde duran tüketilebilirler: her adımda, kullanıldı/satıldı mı yoksa tutuldu mu.
+    con.execute(
+        """
+        CREATE VIEW eldeki_tuketilebilirler AS
+        SELECT d.run_id, d.adim, i AS indeks,
+          json_extract_string(d.ham_durum, '$.consumables.cards[' || i || '].key') AS anahtar,
+          json_extract_string(d.ham_durum, '$.consumables.cards[' || i || '].label') AS ad,
+          CAST(json_extract_string(d.komut, '$.parametreler.consumable') AS INTEGER) = i
+            AND json_extract_string(d.komut, '$.yontem') = 'use' AS kullanildi,
+          CAST(json_extract_string(d.komut, '$.parametreler.consumable') AS INTEGER) = i
+            AND json_extract_string(d.komut, '$.yontem') = 'sell' AS satildi
+        FROM decisions d,
+             range(CAST(COALESCE(json_array_length(json_extract(d.ham_durum, '$.consumables.cards')), 0) AS BIGINT)) AS t(i)
         """
     )
     # Satışlar: ne satıldı, kaça.
