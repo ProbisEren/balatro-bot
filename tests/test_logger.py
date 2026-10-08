@@ -317,3 +317,103 @@ def test_secenekler_kaydedilir_ve_sorgulanir(tmp_path):
         "SELECT json_array_length(secenekler) FROM decisions"
     ).fetchone()[0]
     assert adet == 3
+
+
+# --- bütünlük alanları ---
+
+
+def test_gozlemde_seed_varsa_kayit_reddedilir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        with pytest.raises(LoggerHatasi, match="seed"):
+            log.karar(faz="X", gozlem={"ic": {"seed": "ABC"}}, komut=None, ham_durum={})
+        assert log._adim == 0  # hiçbir şey yazılmadı
+
+
+def test_gozlemde_sirasiz_deste_reddedilir(tmp_path):
+    deste = {"cards": {"cards": [{"key": "S_A", "id": 2}, {"key": "C_2", "id": 1}]}}
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        with pytest.raises(LoggerHatasi, match="sıralı değil"):
+            log.karar(faz="X", gozlem=deste, komut=None, ham_durum={})
+
+
+def test_gercek_filtrenin_ciktisi_korumadan_gecer_ham_durum_gecmez(tmp_path):
+    from balatro_ai.env.gozlem import insan_gozlemi
+
+    ham = _gercek_durum()
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="SELECTING_HAND", gozlem=insan_gozlemi(ham), komut=None, ham_durum=ham)
+        with pytest.raises(LoggerHatasi):
+            log.karar(faz="SELECTING_HAND", gozlem=ham, komut=None, ham_durum=ham)
+
+
+def test_hile_komutu_run_i_gecersiz_isaretler(tmp_path):
+    with RunLogger(tmp_path, run_id="temiz") as log:
+        _baslat(log)
+        _karar(log)
+        log.run_bitir(durum="kaybetti")
+    with RunLogger(tmp_path, run_id="hileli") as log:
+        _baslat(log)
+        log.karar(faz="X", gozlem={}, ham_durum={}, komut={"yontem": "set", "parametreler": {"chips": 300}})
+        log.karar(faz="X", gozlem={}, ham_durum={}, komut={"yontem": "set", "parametreler": {"money": 99}})
+        log.run_bitir(durum="kazandi")
+    con = baglan(tmp_path)
+    satirlar = dict(con.execute("SELECT run_id, gecerli FROM runs").fetchall())
+    assert satirlar == {"temiz": True, "hileli": False}
+    ham = con.execute("SELECT manipule_komutlari FROM runs WHERE run_id='hileli'").fetchone()[0]
+    assert json.loads(ham) == ["set"]
+
+
+def test_yarim_kalan_run_gecerli_sayilmaz(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        _karar(log)
+        log._dosya.flush()
+        assert baglan(tmp_path).execute("SELECT gecerli FROM runs").fetchone()[0] is False
+
+
+def test_seed_bolumu_zorunlu_ve_gecerli_degerler(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        with pytest.raises(LoggerHatasi, match="bölüm"):
+            log.run_basla(seed="S", deste="RED", stake="WHITE", yaklasim="x", ajan=AJAN,
+                          yapilandirma={}, bolum="rastgele")
+        _baslat(log, bolum="test")
+        log.run_bitir(durum="iptal")
+    assert baglan(tmp_path).execute("SELECT bolum FROM runs").fetchone()[0] == "test"
+
+
+def test_durum_ozetleri_ayni_durumda_ayni(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        _karar(log)
+        _karar(log)
+        log.run_bitir(durum="iptal")
+    ozetler = baglan(tmp_path).execute("SELECT ham_durum_ozeti FROM decisions").fetchall()
+    assert ozetler[0] == ozetler[1] and len(ozetler[0][0]) == 64
+
+
+def test_sureler_ayri_kaydedilir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(faz="X", gozlem={}, ham_durum={}, komut=None, sure_ms=10.0, bot_ms=3.0, api_ms=7.0)
+        log.run_bitir(durum="iptal")
+    assert baglan(tmp_path).execute("SELECT sure_ms, bot_ms, api_ms FROM decisions").fetchone() == (10.0, 3.0, 7.0)
+
+
+def test_sayaclar_ve_lovely_log_ozeti(tmp_path):
+    lovely = tmp_path / "lovely.log"
+    lovely.write_text("INFO - ok\nERROR - bir hata\nINFO - x\n ERROR bir daha\n")
+    with RunLogger(tmp_path / "veri", run_id="r1") as log:
+        _baslat(log, oyun_ayarlari={"fast": True}, profil_parmak_izi="abc")
+        log.sayac_artir("zaman_asimi")
+        log.sayac_artir("yeniden_deneme", 2)
+        with pytest.raises(LoggerHatasi):
+            log.sayac_artir("uydurma")
+        log.run_bitir(durum="hata", lovely_log=lovely)
+    con = baglan(tmp_path / "veri")
+    sayaclar, lovely_ozet = con.execute("SELECT sayaclar, lovely_log FROM runs").fetchone()
+    assert json.loads(sayaclar) == {"zaman_asimi": 1, "yeniden_deneme": 2, "oyun_cokmesi": 0, "mod_hatasi": 0}
+    assert json.loads(lovely_ozet)["hata_satiri"] == 1  # yalnızca " ERROR " biçimli satır
+    assert con.execute("SELECT profil_parmak_izi FROM runs").fetchone()[0] == "abc"
