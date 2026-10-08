@@ -4,7 +4,9 @@ BalatroBot `gamestate` cevabı iki yerde gizli bilgi sızdırır (2026-10-08'de 
 - `seed`: oyunun tohumu, gelecek her şeyi belirler.
 - `cards` (deste): round içinde kalan deste çekiliş sırasında listelenir; sonraki çekilişler
   listenin sonundan ters sırayla gelir.
-Bot bu iki bilgiyi hiçbir koşulda görmemelidir (docs/PLAN.md, adil oyun kuralı).
+- Yüzü kapalı kartlar (`state.hidden`): bazı boss'lar eldeki kartı kapatır, API yine de
+  kartın rank/suit bilgisini verir. İnsan bunu göremez.
+Bot bu bilgileri hiçbir koşulda görmemelidir (docs/PLAN.md, adil oyun kuralı).
 """
 
 from __future__ import annotations
@@ -14,6 +16,24 @@ from typing import Any
 
 # Bir insanın görmediği üst düzey alanlar.
 GIZLI_ALANLAR = frozenset({"seed"})
+
+# Kapalı kartın kimliğinin maskelendiği alanlar. Deste (`cards`) burada yok: oyunda deste
+# ekranı kalan kartları gösterir, tüm deste kartları teknik olarak "kapalı" işaretlidir.
+KART_ALANLARI = ("hand", "jokers", "consumables", "shop", "vouchers", "packs", "pack")
+
+
+def _kapali_mi(kart: dict[str, Any]) -> bool:
+    durum = kart.get("state")
+    return isinstance(durum, dict) and bool(durum.get("hidden"))
+
+
+def _kapali_karti_maskele(alan: dict[str, Any]) -> None:
+    kartlar = alan.get("cards")
+    if not isinstance(kartlar, list):
+        return
+    for i, kart in enumerate(kartlar):
+        if isinstance(kart, dict) and _kapali_mi(kart):
+            kartlar[i] = {"state": {"hidden": True}}
 
 
 def insan_gozlemi(durum: dict[str, Any]) -> dict[str, Any]:
@@ -26,6 +46,10 @@ def insan_gozlemi(durum: dict[str, Any]) -> dict[str, Any]:
     gozlem = copy.deepcopy(durum)
     for alan in GIZLI_ALANLAR:
         gozlem.pop(alan, None)
+    for ad in KART_ALANLARI:
+        alan = gozlem.get(ad)
+        if isinstance(alan, dict):
+            _kapali_karti_maskele(alan)
     deste = gozlem.get("cards")
     if isinstance(deste, dict) and isinstance(deste.get("cards"), list):
         deste["cards"] = sorted(deste["cards"], key=lambda k: (k.get("key", ""), k.get("id", 0)))

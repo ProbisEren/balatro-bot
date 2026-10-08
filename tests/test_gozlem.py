@@ -36,3 +36,37 @@ def test_el_ve_diger_alanlar_aynen_kalir():
     assert g["hand"] == DURUM["hand"]
     assert g["money"] == DURUM["money"]
     assert g["state"] == DURUM["state"]
+
+
+def _kapali_el():
+    d = json.loads(json.dumps(DURUM))
+    d["hand"]["cards"][1]["state"] = {"hidden": True}
+    return d
+
+
+def test_kapali_el_karti_kimligi_gizlenir():
+    ham = _kapali_el()
+    kimlik = ham["hand"]["cards"][1]["key"]
+    g = insan_gozlemi(ham)
+    assert g["hand"]["cards"][1] == {"state": {"hidden": True}}
+    assert kimlik not in json.dumps(g["hand"])
+
+
+def test_acik_el_kartlari_ve_konumlari_degismez():
+    g = insan_gozlemi(_kapali_el())
+    for i, kart in enumerate(DURUM["hand"]["cards"]):
+        if i != 1:
+            assert g["hand"]["cards"][i] == kart
+
+
+def test_deste_kartlari_kapali_isaretli_olsa_da_korunur():
+    g = insan_gozlemi(DURUM)
+    assert all("key" in k for k in g["cards"]["cards"])
+
+
+def test_kapali_dukkan_ve_joker_de_gizlenir():
+    d = json.loads(json.dumps(DURUM))
+    d["jokers"] = {"cards": [{"key": "j_joker", "state": {"hidden": True}}], "count": 1}
+    d["shop"] = {"cards": [{"key": "j_blueprint", "state": {"hidden": True}}], "count": 1}
+    g = insan_gozlemi(d)
+    assert "j_joker" not in json.dumps(g) and "j_blueprint" not in json.dumps(g)
