@@ -23,6 +23,8 @@ Kurulum dokümanları:
 - Steamodded macOS kurulumu: https://docs.smods.dev/Installation/Installing%20Steamodded%20mac
 - Lovely macOS kurulumu: Lovely README (yukarıdaki repo)
 
+Oyunu başlatan komut satırı: `balatrobot` 1.5.2 (PyPI, https://pypi.org/project/balatrobot/), MIT. Ayrıntı: `docs/OYUN_BASLATMA.md`.
+
 Doğrulama: Lovely log'u `~/Library/Application Support/Balatro/Mods/lovely/log/` altında. Kurulum sonrası `health` isteği `{"status":"ok"}` döndürdü.
 
 ## Yazılım bağımlılıkları (şu an)
