@@ -153,3 +153,22 @@ def test_sahte_oyunda_greedy_run_bitirir_ve_karar_aciklamasi_loglanir(tmp_path, 
         "WHERE json_extract_string(ek, '$.ajan.karar') IS NOT NULL"
     ).fetchall()
     assert kararlar  # oynanan her el kararının açıklaması kayıtta
+
+
+def test_yuzu_kapali_kart_varsa_cokmez_gorunen_kartlardan_oynar():
+    """Elde yüzü kapalı (kimliği gizli) kart varsa greedy baseline'ının çökmediğini, kapalı kartı oynanışa katmadığını doğrular."""
+    el = ["S_A", "D_A", "H_9", "C_4", "S_2", "D_7", "H_K", "C_3"]
+    g = gozlem(el, hedef=10_000, discards_left=0)
+    g["hand"]["cards"][1] = {"state": {"hidden": True}}  # D_A kapalı
+    yontem, kartlar = coz(GreedyAjan(1).sec(g, bilgi(g)))
+    assert yontem == "play" and 1 not in kartlar
+
+
+def test_yuzu_kapali_kartlar_discard_degerlendirmesini_bozmaz():
+    """Discard değerlendirmesinde kapalı kartlar olsa da ajanın çökmeden geçerli bir karar verdiğini doğrular."""
+    el = ["S_A", "S_K", "S_Q", "S_J", "H_2", "D_3", "C_4", "D_5"]
+    g = gozlem(el, [f"S_{r}" for r in "3456789T"] + ["H_6", "D_7"], hedef=5000)
+    for i in (5, 6):
+        g["hand"]["cards"][i] = {"state": {"hidden": True}}
+    yontem, kartlar = coz(GreedyAjan(1).sec(g, bilgi(g)))
+    assert yontem in ("discard", "play") and kartlar
