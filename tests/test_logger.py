@@ -108,3 +108,81 @@ def test_duckdb_ile_sorgulanir(tmp_path):
             "SELECT json_extract_string(komut,'$.yontem') FROM decisions LIMIT 1"
         ).fetchone()[0]
         assert yontem == "play"
+
+
+def _durum_magaza():
+    k = lambda key, fiyat: {"key": key, "label": key.upper(), "cost": {"buy": fiyat}}
+    return {
+        "money": 10,
+        "shop": {"cards": [k("c_mercury", 3), k("j_juggler", 4)]},
+        "vouchers": {"cards": [k("v_crystal_ball", 10)]},
+        "packs": {"cards": [k("p_buffoon", 4), k("p_celestial", 6)]},
+    }
+
+
+def test_magazada_gorulen_ve_alinmayan_teklifler_sorgulanir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="SHOP", gozlem={}, ham_durum=_durum_magaza(),
+            komut={"yontem": "buy", "parametreler": {"pack": 1}},
+            cevap={"state": "SMODS_BOOSTER_OPENED"},
+        )
+        log.run_bitir(durum="iptal")
+    con = baglan(tmp_path)
+    satirlar = con.execute(
+        "SELECT tur, anahtar, fiyat, alindi FROM shop_teklifleri ORDER BY tur, indeks"
+    ).fetchall()
+    assert len(satirlar) == 5  # 2 kart + 1 kupon + 2 paket
+    alinanlar = [s[1] for s in satirlar if s[3]]
+    assert alinanlar == ["p_celestial"]
+    reddedilen = [s[1] for s in satirlar if not s[3]]
+    assert set(reddedilen) == {"c_mercury", "j_juggler", "v_crystal_ball", "p_buffoon"}
+
+
+def test_pakette_gorulen_ve_secilen_kartlar(tmp_path):
+    kartlar = [{"key": f"c_{i}", "label": f"P{i}", "value": {"effect": "x"}} for i in range(5)]
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="SMODS_BOOSTER_OPENED", gozlem={}, ham_durum={"pack": {"cards": kartlar}},
+            komut={"yontem": "pack", "parametreler": {"card": 2}},
+        )
+        log.run_bitir(durum="iptal")
+    satirlar = baglan(tmp_path).execute(
+        "SELECT anahtar, secildi FROM paket_icerikleri ORDER BY indeks"
+    ).fetchall()
+    assert [s[0] for s in satirlar] == [f"c_{i}" for i in range(5)]
+    assert [s[1] for s in satirlar] == [False, False, True, False, False]
+
+
+def test_oynanan_eller_kartlariyla_ve_skor_degisimiyle(tmp_path):
+    el = [{"key": k} for k in ("S_A", "D_J", "C_9", "D_9")]
+    once = {"hand": {"cards": el}, "round": {"hands_left": 4, "discards_left": 3, "chips": 0}}
+    sonra = {"round": {"chips": 56}}
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="SELECTING_HAND", gozlem={}, ham_durum=once, cevap=sonra,
+            komut={"yontem": "play", "parametreler": {"cards": [2, 3]}},
+        )
+        log.run_bitir(durum="iptal")
+    satir = baglan(tmp_path).execute(
+        "SELECT islem, kartlar, kalan_el, skor_once, skor_sonra FROM eller"
+    ).fetchone()
+    assert satir == ("play", ["C_9", "D_9"], 4, 0, 56)
+
+
+def test_reddedilen_komut_hatasi_kaydedilir(tmp_path):
+    with RunLogger(tmp_path, run_id="r1") as log:
+        _baslat(log)
+        log.karar(
+            faz="MENU", gozlem={}, ham_durum={}, cevap=None,
+            komut={"yontem": "play", "parametreler": {"cards": [0]}},
+            hata={"kod": -32002, "mesaj": "Invalid state"},
+        )
+        log.run_bitir(durum="iptal")
+    satir = baglan(tmp_path).execute(
+        "SELECT json_extract_string(hata, '$.kod') FROM decisions"
+    ).fetchone()
+    assert satir[0] == "-32002"

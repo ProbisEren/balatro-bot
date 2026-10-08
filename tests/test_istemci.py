@@ -128,3 +128,12 @@ def test_hile_ve_hata_ayiklama_uc_noktalari_engelli(sahte, yontem):
 
 def test_izinli_aksiyonlar_hile_icermez():
     assert not ({"set", "add", "load", "save", "screenshot"} & IZINLI_AKSIYONLAR)
+
+
+def test_paket_secimi_parametreleri(sahte):
+    c = BalatroIstemci(sahte.adres)
+    c.paket_sec(kart=2, hedefler=[0, 1])
+    c.paket_sec(atla=True)
+    assert sahte.gelenler[0]["method"] == "pack"
+    assert sahte.gelenler[0]["params"] == {"card": 2, "targets": [0, 1]}
+    assert sahte.gelenler[1]["params"] == {"skip": True}

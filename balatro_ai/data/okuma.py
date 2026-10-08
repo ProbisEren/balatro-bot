@@ -33,6 +33,8 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
           json_extract(json, '$.gozlem') AS gozlem,
           json_extract(json, '$.komut') AS komut,
           json_extract(json, '$.ham_durum') AS ham_durum,
+          json_extract(json, '$.cevap') AS cevap,
+          json_extract(json, '$.hata') AS hata,
           CAST({j('$.sure_ms')} AS DOUBLE) AS sure_ms,
           json_extract(json, '$.ek') AS ek,
           {j('$.sema')} AS sema
@@ -83,4 +85,57 @@ def baglan(kok: str | Path) -> duckdb.DuckDBPyConnection:
         ) s USING (run_id)
         """
     )
+    _turetilmis_gorunumler(con)
     return con
+
+
+def _turetilmis_gorunumler(con: duckdb.DuckDBPyConnection) -> None:
+    """Ham durumdan türetilen görünümler: ne gördü, ne seçti, neyi reddetti."""
+    # Mağazada her adımda görülen her teklif ve alınıp alınmadığı.
+    parcalar = []
+    for tur, alan, param in (("kart", "shop", "card"), ("kupon", "vouchers", "voucher"), ("paket", "packs", "pack")):
+        parcalar.append(
+            f"""
+            SELECT d.run_id, d.adim, '{tur}' AS tur, i AS indeks,
+              json_extract_string(d.ham_durum, '$.{alan}.cards[' || i || '].key') AS anahtar,
+              json_extract_string(d.ham_durum, '$.{alan}.cards[' || i || '].label') AS ad,
+              CAST(json_extract_string(d.ham_durum, '$.{alan}.cards[' || i || '].cost.buy') AS INTEGER) AS fiyat,
+              CAST(json_extract_string(d.ham_durum, '$.money') AS INTEGER) AS para,
+              (json_extract_string(d.komut, '$.yontem') = 'buy'
+                AND CAST(json_extract_string(d.komut, '$.parametreler.{param}') AS INTEGER) = i) AS alindi
+            FROM decisions d,
+                 range(CAST(COALESCE(json_array_length(json_extract(d.ham_durum, '$.{alan}.cards')), 0) AS BIGINT)) AS t(i)
+            """
+        )
+    con.execute("CREATE VIEW shop_teklifleri AS " + " UNION ALL ".join(parcalar))
+    # Açılan pakette görülen kartlar ve seçilip seçilmediği.
+    con.execute(
+        """
+        CREATE VIEW paket_icerikleri AS
+        SELECT d.run_id, d.adim, i AS indeks,
+          json_extract_string(d.ham_durum, '$.pack.cards[' || i || '].key') AS anahtar,
+          json_extract_string(d.ham_durum, '$.pack.cards[' || i || '].label') AS ad,
+          json_extract_string(d.ham_durum, '$.pack.cards[' || i || '].value.effect') AS etki,
+          (json_extract_string(d.komut, '$.yontem') = 'pack'
+            AND CAST(json_extract_string(d.komut, '$.parametreler.card') AS INTEGER) = i) AS secildi
+        FROM decisions d,
+             range(CAST(COALESCE(json_array_length(json_extract(d.ham_durum, '$.pack.cards')), 0) AS BIGINT)) AS t(i)
+        """
+    )
+    # Oynanan ve atılan eller: hangi kartlar, hangi durumda.
+    con.execute(
+        """
+        CREATE VIEW eller AS
+        SELECT d.run_id, d.adim, json_extract_string(d.komut, '$.yontem') AS islem,
+          list_transform(
+            from_json(json_extract(d.komut, '$.parametreler.cards'), '["INTEGER"]'),
+            x -> json_extract_string(d.ham_durum, '$.hand.cards[' || x || '].key')
+          ) AS kartlar,
+          CAST(json_extract_string(d.ham_durum, '$.round.hands_left') AS INTEGER) AS kalan_el,
+          CAST(json_extract_string(d.ham_durum, '$.round.discards_left') AS INTEGER) AS kalan_discard,
+          CAST(json_extract_string(d.ham_durum, '$.round.chips') AS BIGINT) AS skor_once,
+          CAST(json_extract_string(d.cevap, '$.round.chips') AS BIGINT) AS skor_sonra
+        FROM decisions d
+        WHERE json_extract_string(d.komut, '$.yontem') IN ('play', 'discard')
+        """
+    )

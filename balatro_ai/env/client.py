@@ -28,6 +28,7 @@ IZINLI_AKSIYONLAR = frozenset(
         "sell",
         "reroll",
         "next_round",
+        "pack",
         "use",
         "rearrange",
         "menu",
@@ -174,6 +175,22 @@ class BalatroIstemci:
     def sirala(self, **sira: list[int]) -> dict[str, Any]:
         """`hand=`, `jokers=` veya `consumables=` ile yeni sıra."""
         return self._cagri("rearrange", sira)
+
+    def paket_sec(
+        self,
+        kart: int | None = None,
+        hedefler: list[int] | None = None,
+        atla: bool = False,
+    ) -> dict[str, Any]:
+        """Açık paketten kart seç (`kart`, 0 tabanlı), gerekirse eldeki `hedefler` ile; ya da `atla`."""
+        p: dict[str, Any] = {}
+        if kart is not None:
+            p["card"] = kart
+        if hedefler is not None:
+            p["targets"] = hedefler
+        if atla:
+            p["skip"] = True
+        return self._cagri("pack", p)
 
     def menuye_don(self) -> dict[str, Any]:
         return self._cagri("menu")

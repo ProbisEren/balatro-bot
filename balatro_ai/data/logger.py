@@ -164,10 +164,17 @@ class RunLogger:
         gozlem: dict[str, Any],
         komut: dict[str, Any] | None,
         ham_durum: dict[str, Any],
+        cevap: dict[str, Any] | None = None,
+        hata: dict[str, Any] | None = None,
         sure_ms: float | None = None,
         ek: dict[str, Any] | None = None,
     ) -> int:
-        """Bir kararı kaydeder, adım numarasını döndürür. `komut`: {"yontem": ..., "parametreler": ...}."""
+        """Bir kararı kaydeder, adım numarasını döndürür.
+
+        `komut`: {"yontem": ..., "parametreler": ...}. `cevap`: komuttan sonra oyunun döndürdüğü
+        ham durum (run'ın son hamlesinin sonucu da böylece kaydedilir). `hata`: oyun komutu
+        reddettiyse {"kod": ..., "mesaj": ...}.
+        """
         self._kontrol_acik()
         if komut is not None and "yontem" not in komut:
             raise LoggerHatasi("`komut` içinde `yontem` olmalı")
@@ -183,6 +190,8 @@ class RunLogger:
                 "gozlem": gozlem,
                 "komut": komut,
                 "ham_durum": ham_durum,
+                "cevap": cevap,
+                "hata": hata,
                 "sure_ms": sure_ms,
                 "ek": ek or {},
             }
