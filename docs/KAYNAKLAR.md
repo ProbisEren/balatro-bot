@@ -23,6 +23,8 @@ Kurulum dokümanları:
 - Steamodded macOS kurulumu: https://docs.smods.dev/Installation/Installing%20Steamodded%20mac
 - Lovely macOS kurulumu: Lovely README (yukarıdaki repo)
 
+Not: BalatroBot modunda `start.lua` içinde bizim bir satırlık yamamız var (`docs/yamalar/`, ayrıntı `docs/OYUN_BASLATMA.md`).
+
 Oyunu başlatan komut satırı: `balatrobot` 1.5.2 (PyPI, https://pypi.org/project/balatrobot/), MIT. Ayrıntı: `docs/OYUN_BASLATMA.md`.
 
 Doğrulama: Lovely log'u `~/Library/Application Support/Balatro/Mods/lovely/log/` altında. Kurulum sonrası `health` isteği `{"status":"ok"}` döndürdü.
@@ -34,6 +36,8 @@ Doğrulama: Lovely log'u `~/Library/Application Support/Balatro/Mods/lovely/log/
 | pytest | 9.1.1 | test | https://docs.pytest.org |
 | ruff | 0.16.10 | lint | https://docs.astral.sh/ruff |
 | duckdb | 1.5.6 | run kayıtlarını sorgulama | https://duckdb.org (MIT) |
+| gymnasium | 1.4.0 | ortam arayüzü | https://gymnasium.farama.org (MIT) |
+| numpy | (gymnasium ile gelen) | aksiyon maskesi | https://numpy.org (BSD-3) |
 
 Planda ileride kullanılacaklar (henüz kurulmadı): Gymnasium, PyTorch, scikit-learn, XGBoost/LightGBM, Parquet, DuckDB, Polars, MLflow veya Weights & Biases, Streamlit, SHAP.
 
