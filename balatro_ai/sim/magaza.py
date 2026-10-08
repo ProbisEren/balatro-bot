@@ -19,7 +19,7 @@ from balatro_ai.sim.tur import Tur, rollout
 
 PARA_DEGERI = 0.02  # 1 dolarlık maliyetin "geçilen blind" cinsinden değeri (TAHMİN, deneyle ayarlanacak)
 SONRAKI_BLIND = 3  # değerlendirmede bakılan blind sayısı
-DUNYA = 40  # her blind için ortak rastgele deste sayısı
+DUNYA = 24  # her blind için ortak rastgele deste sayısı (hız için 40’tan düşürüldü; TAHMİN, gürültü artar)
 
 
 def faiz(para: int) -> int:
@@ -33,7 +33,11 @@ def faiz_kaybi(para: int, fiyat: int, tur_sayisi: int = SONRAKI_BLIND) -> int:
 
 
 def maliyet(para: int, fiyat: int) -> float:
-    """Bir satın almanın "geçilen blind" cinsinden maliyeti: (fiyat + kaybedilen faiz) x paranın değeri."""
+    """Bir satın almanın "geçilen blind" cinsinden maliyeti: (fiyat + kaybedilen faiz) x paranın değeri.
+
+    `PARA_DEGERI` sabit bir TAHMİNdir ve zenginliğe göre elle ölçeklenmez; paranın gerçek değeri (başka neye
+    harcanabileceği) ileride run verisinden öğrenilecek. Faiz kaybı ise oyunun kuralıyla tam hesaplanır.
+    """
     return (fiyat + faiz_kaybi(para, fiyat)) * PARA_DEGERI
 
 
@@ -53,23 +57,27 @@ def desteler_uret(deste: Sequence[Kart], hedef_sayisi: int, rng: random.Random, 
 def gecme_orani(
     desteler: Sequence[Sequence[Kart]], el_degerleri: dict[str, tuple[float, float]], hedef: float,
     el_hakki: int, discard_hakki: int, el_boyu: int = 8, tohum: int = 0,
-    jokerler: Sequence[Joker] = (), baglam: Baglam | None = None,
+    jokerler: Sequence[Joker] = (), baglam: Baglam | None = None, ilerleme_agirligi: float = 0.0,
 ) -> float:
-    """Verilen el değerleri ve jokerlerle, bir blind'ı temel politikayla geçme oranı (aynı desteler üzerinde)."""
+    """Verilen el değerleri ve jokerlerle, bir blind'ı temel politikayla geçme oranı (aynı desteler üzerinde).
+
+    `ilerleme_agirligi` > 0 ise geçemeyen turlar da `ağırlık x min(skor/hedef, 1)` kadar kısmi değer alır. Amaç: blind'ı
+    şu an hiç geçemeyen bir durumda (oran 0) bile skoru artıran alımların fark edilmesi; aksi halde değer 0'da düzleşir.
+    """
     gecen = 0
     for j, d in enumerate(desteler):
         t = Tur([], list(d), el_hakki, discard_hakki, 0.0, float(hedef), el_degerleri, el_boyu,
                 jokerler=tuple(jokerler), baglam=baglam or Baglam())
         t.doldur()
         rollout(t, random.Random(tohum * 1000 + j))
-        gecen += t.kazandi()
+        gecen += 1.0 if t.kazandi() else ilerleme_agirligi * min(t.chips / t.hedef, 1.0)
     return gecen / len(desteler)
 
 
 def beklenen_gecilen_blind(
     desteler: Sequence[Sequence[Sequence[Kart]]], el_degerleri: dict[str, tuple[float, float]],
     hedefler: Sequence[float | Sequence[tuple[float, float]]], el_hakki: int, discard_hakki: int, el_boyu: int = 8,
-    jokerler: Sequence[Joker] = (), baglam: Baglam | None = None,
+    jokerler: Sequence[Joker] = (), baglam: Baglam | None = None, ilerleme_agirligi: float = 0.0,
 ) -> float:
     """Sonraki blind'ların geçilme olasılıkları toplamı (blind başına ayrı destelerle).
 
@@ -81,7 +89,7 @@ def beklenen_gecilen_blind(
         karisim = [(float(h), 1.0)] if isinstance(h, int | float) else list(h)
         toplam += sum(
             w * gecme_orani(desteler[k], el_degerleri, hedef, el_hakki, discard_hakki, el_boyu, tohum=k,
-                            jokerler=jokerler, baglam=baglam)
+                            jokerler=jokerler, baglam=baglam, ilerleme_agirligi=ilerleme_agirligi)
             for hedef, w in karisim
         )
     return toplam

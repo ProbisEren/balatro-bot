@@ -17,6 +17,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field, replace
 
+from balatro_ai.sim.el_turu import EL_TURLERI, degerlendir
 from balatro_ai.sim.hizli import en_iyi_oynanis
 from balatro_ai.sim.jokerler import Baglam, Joker
 from balatro_ai.sim.kartlar import RUTBE_ID, Kart
@@ -42,6 +43,16 @@ class Tur:
     tam_bes: bool = False  # The Psychic: yalnızca tam 5 kartlık oynanış puan getirir
     jokerler: tuple[Joker, ...] = ()  # elde taşınan, etkisi tanımlı jokerler
     baglam: Baglam = field(default_factory=Baglam)  # jokerlerin baktığı sabit bilgiler (para, el türü sayaçları); haklar ve deste burada güncellenir
+    boss: str | None = None  # "The Eye" / "The Mouth" ise oynanan el türleri sonraki elleri kısıtlar; diğer bosslarda kullanılmaz
+    oynanan_turler: frozenset[str] = frozenset()  # bu turda şimdiye kadar oynanmış el türleri (oyun durumundan başlar, oynadıkça büyür)
+
+    def yasak(self) -> frozenset[str]:
+        """Boss yüzünden şu an 0 puan getiren el türleri: Eye'da oynanmış türler, Mouth'ta ilk oynanan dışındakiler."""
+        if self.boss == "The Eye":
+            return self.oynanan_turler
+        if self.boss == "The Mouth" and self.oynanan_turler:
+            return frozenset(EL_TURLERI) - self.oynanan_turler
+        return frozenset()
 
     def joker_baglami(self, discard_sonra: int | None = None) -> Baglam:
         """Şu anki hak ve deste durumuna göre jokerlerin bağlamı (oynanan el düşüldükten sonraki el hakkıyla)."""
@@ -56,6 +67,7 @@ class Tur:
         return Tur(
             list(self.el), list(self.deste), self.kalan_el, self.kalan_discard, self.chips,
             self.hedef, self.el_degerleri, self.el_boyu, self.tam_bes, self.jokerler, self.baglam,
+            self.boss, self.oynanan_turler,
         )
 
     def chipler(self) -> list[int]:
@@ -78,7 +90,7 @@ class Tur:
 
 def en_iyi(t: Tur) -> tuple[int, tuple[int, ...]]:
     """Eldeki en iyi oynanışın skoru ve kart indeksleri; The Psychic'te oynanış 5 karta tamamlanır (skor değişmez)."""
-    skor, idx = en_iyi_oynanis(t.el, t.el_degerleri, t.chipler(), t.jokerler, t.joker_baglami())
+    skor, idx = en_iyi_oynanis(t.el, t.el_degerleri, t.chipler(), t.jokerler, t.joker_baglami(), t.yasak())
     if t.tam_bes:
         if len(t.el) < 5:
             return 0, tuple(range(len(t.el)))  # 5 kart oynanamaz: bu el sıfır puan
@@ -92,6 +104,9 @@ def alt_kume_skoru(t: Tur, idx: tuple[int, ...]) -> int:
     if t.tam_bes and len(idx) != 5:
         return 0
     secili = [t.el[i] for i in idx]
+    yasak = t.yasak()
+    if yasak and secili and degerlendir(secili).el_turu in yasak:  # oyun seçilen kartların GERÇEK türünü puanlar
+        return 0
     return en_iyi_oynanis(secili, t.el_degerleri, [k.chip for k in secili], t.jokerler, t.joker_baglami())[0]
 
 
@@ -105,6 +120,9 @@ def oyna(t: Tur, idx: tuple[int, ...], skor: int) -> None:
     """Kartları oynar: skoru ekler, bir el hakkı harcar, eli tamamlar."""
     t.chips += skor
     t.kalan_el -= 1
+    if t.boss in ("The Eye", "The Mouth") and idx:  # oynanan türü kaydet: Eye tekrarını, Mouth farklı türü sıfırlar
+        tur = degerlendir([t.el[i] for i in idx]).el_turu
+        t.oynanan_turler = t.oynanan_turler | {tur} if t.boss == "The Eye" else (t.oynanan_turler or frozenset({tur}))
     _cikar(t, idx)
     t.doldur()
 
@@ -195,7 +213,7 @@ def politika(t: Tur, rng: random.Random, ornek: int = 3) -> tuple[str, tuple[int
         for o in ornekler:
             yeni = kalanlar + o[: len(atilacak)]
             s = en_iyi_oynanis(
-                yeni, t.el_degerleri, [k.chip for k in yeni], t.jokerler, t.joker_baglami(t.kalan_discard - 1)
+                yeni, t.el_degerleri, [k.chip for k in yeni], t.jokerler, t.joker_baglami(t.kalan_discard - 1), t.yasak()
             )[0]
             toplam += s
             gecen += s >= kalan
