@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 from balatro_ai.agents.greedy import GreedyAjan
+from balatro_ai.agents.planlayici import PlanlayiciAjan
 from balatro_ai.agents.rastgele import RastgeleAjan
 from balatro_ai.agents.rutbe_grubu import RutbeGrubuAjan
 from balatro_ai.env.client import BalatroIstemci
@@ -32,7 +33,7 @@ def son_lovely_log() -> Path | None:
     return kayitlar[-1] if kayitlar else None
 
 
-def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan | RutbeGrubuAjan | GreedyAjan, oyun_seed: str, **secenekler) -> dict:
+def run_oyna(env: BalatroOrtami, ajan: RastgeleAjan | RutbeGrubuAjan | GreedyAjan | PlanlayiciAjan, oyun_seed: str, **secenekler) -> dict:
     """Tek run oynatır; özet döndürür."""
     gozlem, bilgi = env.reset(options={"oyun_seed": oyun_seed, **secenekler})
     toplam_odul, adim = 0.0, 0
@@ -59,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--kume", choices=["dar", "tam"], default="dar")
-    ap.add_argument("--ajan", choices=["rastgele", "rutbe_grubu", "greedy"], default="rastgele")
+    ap.add_argument("--ajan", choices=["rastgele", "rutbe_grubu", "greedy", "planlayici"], default="rastgele")
     ap.add_argument("--run", type=int, default=1, help="oynatılacak run sayısı")
     ap.add_argument("--seed-oneki", default="BOT", help="oyun seed'leri: <önek><5 haneli sıra>")
     ap.add_argument("--ajan-tohumu", type=int, default=0)
@@ -75,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     if not istemci.saglik():
         print("Oyun/BalatroBot cevap vermiyor.", file=sys.stderr)
         return 2
-    ajan = {"rutbe_grubu": RutbeGrubuAjan, "greedy": GreedyAjan}.get(args.ajan, RastgeleAjan)(args.ajan_tohumu)
+    ajan = {"rutbe_grubu": RutbeGrubuAjan, "greedy": GreedyAjan, "planlayici": PlanlayiciAjan}.get(args.ajan, RastgeleAjan)(args.ajan_tohumu)
     env = BalatroOrtami(
         istemci,
         kume=args.kume,

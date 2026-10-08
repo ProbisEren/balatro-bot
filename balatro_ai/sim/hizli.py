@@ -85,3 +85,78 @@ def en_iyi_skor(kartlar: Sequence[Kart], el_degerleri: dict[str, tuple[float, fl
             if any(all(p in rr for p in pencere) for rr in renk_rutbe):
                 aday("Straight Flush", toplam)
     return int(en)  # skor chips*mult'un tabanı (düz kartlarda tamsayı)
+
+
+def en_iyi_oynanis(
+    kartlar: Sequence[Kart],
+    el_degerleri: dict[str, tuple[float, float]],
+    chipler: Sequence[int] | None = None,
+) -> tuple[int, tuple[int, ...]]:
+    """En iyi oynanışın skorunu ve hangi kartlar (indeksler) olduğunu döndürür.
+
+    `chipler`: kart başına chip değeri (debuff'lı kart 0); verilmezse rütbeden hesaplanır. Düz kartlar için
+    `en_iyi_skor` ile aynı skoru verir; fazladan, oynanacak kartları da bildirir (puanlayan kartlar).
+    """
+    n = len(kartlar)
+    if n == 0:
+        return 0, ()
+    ids = [RUTBE_ID[k.rutbe] for k in kartlar]
+    renkler = [RENK_INDEKS[k.renk] for k in kartlar]
+    chip = list(chipler) if chipler is not None else [CHIP_ID[r] for r in ids]
+    gruplar: dict[int, list[int]] = {}
+    for i, r in enumerate(ids):
+        gruplar.setdefault(r, []).append(i)
+    for g in gruplar.values():  # her grupta chip'i yüksek kart önce
+        g.sort(key=lambda i: chip[i], reverse=True)
+
+    en_skor, en_idx = 0.0, ()
+
+    def aday(tur: str, idx: tuple[int, ...]) -> None:
+        """Bir el türü ve kart indeksi adayının skorunu hesaplayıp şu ana kadarki en iyisiyle karşılaştırır."""
+        nonlocal en_skor, en_idx
+        c, m = el_degerleri.get(tur) or (float(EL_TABLOSU[tur][0]), float(EL_TABLOSU[tur][1]))
+        s = (c + sum(chip[i] for i in idx)) * m
+        if s > en_skor or not en_idx:
+            en_skor, en_idx = s, idx
+
+    aday("High Card", (max(range(n), key=lambda i: chip[i]),))
+    ciftler = []  # (chip toplamı, indeksler)
+    ucluler = []
+    for g in gruplar.values():
+        if len(g) >= 2:
+            ciftler.append((chip[g[0]] + chip[g[1]], tuple(g[:2])))
+            aday("Pair", tuple(g[:2]))
+        if len(g) >= 3:
+            ucluler.append((chip[g[0]] + chip[g[1]] + chip[g[2]], tuple(g[:3])))
+            aday("Three of a Kind", tuple(g[:3]))
+        if len(g) >= 4:
+            aday("Four of a Kind", tuple(g[:4]))
+    ciftler.sort(reverse=True)
+    if len(ciftler) >= 2:
+        aday("Two Pair", ciftler[0][1] + ciftler[1][1])
+    if ucluler:
+        en_fh: tuple[int, tuple[int, ...]] | None = None
+        for ct, it in ucluler:
+            for cp, ip in ciftler:
+                if not set(ip) & set(it) and (en_fh is None or ct + cp > en_fh[0]):
+                    en_fh = (ct + cp, it + ip)
+        if en_fh:
+            aday("Full House", en_fh[1])
+    for rk in range(4):  # Flush: aynı renkli en yüksek chip'li 5 kart
+        ayni = sorted((i for i in range(n) if renkler[i] == rk), key=lambda i: chip[i], reverse=True)
+        if len(ayni) >= 5:
+            aday("Flush", tuple(ayni[:5]))
+    for alt in range(1, 11):  # Straight / Straight Flush: 5 ardışık rütbe
+        pencere = [14 if x == 1 else x for x in range(alt, alt + 5)]
+        if all(p in gruplar for p in pencere):
+            aday("Straight", tuple(gruplar[p][0] for p in pencere))
+            for rk in range(4):
+                secim = []
+                for p in pencere:
+                    k = next((i for i in gruplar[p] if renkler[i] == rk), None)
+                    if k is None:
+                        break
+                    secim.append(k)
+                else:
+                    aday("Straight Flush", tuple(secim))
+    return int(en_skor), tuple(sorted(en_idx))

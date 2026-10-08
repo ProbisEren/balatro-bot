@@ -57,3 +57,20 @@ def test_uygun_degilse_isaretler():
     assert not hizli_uygun_mu([Kart("9", "S", gelistirme="bonus")])
     assert not hizli_uygun_mu([Kart("9", "S", debuff=True)])
     assert not hizli_uygun_mu([anahtardan("S_9"), anahtardan("S_9")])  # tekrarlı kart
+
+
+def test_en_iyi_oynanis_skoru_tam_motorla_ayni_ve_secilen_kartlar_o_skoru_verir():
+    """Rastgele ellerde (rastgele debuff'lı kartlarla da) `en_iyi_oynanis` skorunun tam motorla aynı olduğunu, döndürdüğü kartların gerçekten o skoru verdiğini doğrular."""
+    from dataclasses import replace
+
+    from balatro_ai.sim.hizli import en_iyi_oynanis
+
+    rng = random.Random(99)
+    for _ in range(600):
+        n = rng.choice([5, 6, 7, 8, 8, 9])
+        el = [anahtardan(f"{s}_{r}") for s, r in rng.sample(DESTE, n)]
+        el = [replace(k, debuff=True) if rng.random() < 0.25 else k for k in el]
+        skor, idx = en_iyi_oynanis(el, VARSAYILAN, [k.chip for k in el])
+        assert skor == kesin_en_iyi(el, VARSAYILAN), [f"{k.renk}{k.rutbe}{'d' if k.debuff else ''}" for k in el]
+        assert 1 <= len(idx) <= 5 and len(set(idx)) == len(idx)
+        assert puan_hesapla([el[i] for i in idx], el_degerleri=VARSAYILAN).skor == skor

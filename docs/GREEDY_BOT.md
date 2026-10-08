@@ -15,12 +15,14 @@
 | Ante 2'ye ulaşan | 0/20 | 13/20 |
 | Aynı seed'de daha iyi / eşit / kötü | | 20 / 0 / 0 |
 
-- Greedy'nin ölümleri: Small Blind 8, Big Blind 8, The Club 2, The Hook 2. Hiçbir run Ante 3'e ulaşmadı.
+- Blind başına geçme (düzeltilmiş sayım): Ante 1 Small 20/20, Big 17/20, Boss 13/17; Ante 2 Small 5/13, Big 0/5. Hiçbir run Ante 3'e ulaşmadı. (Önceki sürümdeki "Small Blind 8, Big Blind 8" ifadesi her ante'nin blind'ını birlikte sayıyordu ve yanıltıcıydı.)
 - En yüksek tek el: 1208 (kraliyet straight flush).
 - **Tahmin doğruluğu:** oynadığı 188 elin 188'inde motorun tahmin ettiği skor, oyunun gerçekte verdiği skorla aynı (jokersiz).
 - Oyundaki reddedilen komut: 0. Botun karar süresi: medyan 130 ms, %95'i 859 ms.
 
 ## Sınırlar
+- Yüzü kapalı kartları hesaba katamaz, oynanışlarda ve tutulacak kartlarda yok sayar (kapalı kartlarla akıl yürütme `docs/PLANLAYICI.md`).
+- Mağaza kodu (gezegen alıp kullanma) yazılı ve testli ama varsayılan olarak kapalı (`magaza=True` ile açılır); gerçek oyunda henüz denenmedi.
 - **Jokerleri, gezegenleri, tarotları, kuponları satın almaz.** Joker olmadan skor bir noktadan sonra yetmiyor. Ölçülen hedefler: Ante 1: 300 / 450 / 600; Ante 2: 800 / 1200 / 1600 (boss'a göre 800-3200). Ante 3 ve sonrası bu verilerde görülmedi (kullanıcı, jokersiz botun yaklaşık 1200 üzerine çıkmasının zor olacağını belirtti; bu henüz ölçülmedi). Bu bilinçli bir v1 sınırı; mağaza kararları sıradaki iş.
 - Boss geçmişi gerektiren kurallar (The Eye, The Mouth) bilinmez.
 - Joker taşırken puan motoru jokersiz hesaplar, yani hesap eksik kalır.
