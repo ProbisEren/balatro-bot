@@ -1,0 +1,31 @@
+# Greedy bot (v1)
+
+`balatro_ai/agents/greedy.py`. Plan Bölüm 6-7, basamak 2: kesin hesap + Monte Carlo discard.
+
+## Ne yapar
+- **El seçimi:** Eldeki 1-5 kartın tüm kombinasyonlarını puan motoruyla (docs/PUAN_MOTORU.md) hesaplar, en yüksek skorluyu seçer; eşit skorda daha az kart. Blind'ı bitiren bir oynanış varsa onu oynar.
+- **Discard:** Blind'ı bitiren oynanış yoksa ve discard hakkı varsa, 1-5 kartlık **tüm** discard kümelerini (8 kartta 218) değerlendirir. Her küme için destenin kalanından (insanın deste ekranında gördüğü kartlar, sırasız) ortak rastgele çekilişler örnekler, çekilişten sonraki en iyi oynanışın beklenen skorunu hesaplar. Beklenen skor şu anki en iyi oynanıştan yüksekse discard eder. Son elde ölçüt "blind'ı geçme olasılığı"dır.
+- **Boss debuff'lı ya da geliştirilmiş kart varsa:** ilk aşama hızlı değerlendiriciyle (`sim/hizli.py`, tam motorla testlerle aynı sonucu verir) tüm kümeleri sıralar, en iyi 12 kümeyi tam motorla yeniden değerlendirir.
+- **El dışındaki aşamalar (v1):** sabit kural: blind seç, mağazadan hiçbir şey almadan çık, paketi atla.
+
+## Gerçek oyun sonuçları (2026-10-08, "dar" küme, 20 run, rastgele ajanla aynı seed'ler)
+| | Rastgele (04) | Greedy (07) |
+|---|---|---|
+| Ortalama son ante | 1,0 | 1,65 |
+| Ante 2'ye ulaşan | 0/20 | 13/20 |
+| Aynı seed'de daha iyi / eşit / kötü | | 20 / 0 / 0 |
+
+- Greedy'nin ölümleri: Small Blind 8, Big Blind 8, The Club 2, The Hook 2. Hiçbir run Ante 3'e ulaşmadı.
+- En yüksek tek el: 1208 (kraliyet straight flush).
+- **Tahmin doğruluğu:** oynadığı 188 elin 188'inde motorun tahmin ettiği skor, oyunun gerçekte verdiği skorla aynı (jokersiz).
+- Oyundaki reddedilen komut: 0. Botun karar süresi: medyan 130 ms, %95'i 859 ms.
+
+## Sınırlar
+- **Jokerleri, gezegenleri, tarotları, kuponları satın almaz.** Joker olmadan skor bir noktadan sonra yetmiyor (Ante 3+ için hedefler, jokersiz bir elle ulaşılamayacak seviyede: 8. ante hedefi 50.000 üzerindedir). Bu bilinçli bir v1 sınırı; mağaza kararları sıradaki iş.
+- Boss geçmişi gerektiren kurallar (The Eye, The Mouth) bilinmez.
+- Joker taşırken puan motoru jokersiz hesaplar, yani hesap eksik kalır.
+- 20 run küçük bir örnek; kesin başarı oranı için daha fazla run gerekir.
+
+## Çalıştırma
+`python -m balatro_ai.eval.calistir --kume dar --ajan greedy --run 20 --seed-oneki SOAKD --deney-adi v1`
+Kayıtlar `veri/NN_greedy_dar_v1/` klasörüne yazılır, tablo `veri/INDEKS.md`.
