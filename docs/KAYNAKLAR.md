@@ -33,6 +33,7 @@ Doğrulama: Lovely log'u `~/Library/Application Support/Balatro/Mods/lovely/log/
 | Python | 3.13.9 | dil | https://www.python.org |
 | pytest | 9.1.1 | test | https://docs.pytest.org |
 | ruff | 0.16.10 | lint | https://docs.astral.sh/ruff |
+| duckdb | 1.5.6 | run kayıtlarını sorgulama | https://duckdb.org (MIT) |
 
 Planda ileride kullanılacaklar (henüz kurulmadı): Gymnasium, PyTorch, scikit-learn, XGBoost/LightGBM, Parquet, DuckDB, Polars, MLflow veya Weights & Biases, Streamlit, SHAP.
 

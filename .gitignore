@@ -22,3 +22,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Run kayitlari (buyuk, git disi)
+veri/
