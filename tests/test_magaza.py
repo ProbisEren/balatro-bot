@@ -160,3 +160,49 @@ def test_ayni_tohum_ayni_karar():
     """Aynı tohumla mağaza kararının tekrarlandığını doğrular."""
     g = _durum(dukkan=[("c_mercury", 3, "PLANET"), ("c_pluto", 3, "PLANET")])
     assert _karar(g, 5)[:2] == _karar(g, 5)[:2]
+
+
+def _kupon(g, anahtar, fiyat=10):
+    """Duruma bir kupon teklifi ekler."""
+    g["vouchers"]["cards"] = [{"key": anahtar, "set": "VOUCHER", "cost": {"buy": fiyat, "sell": 5}, "modifier": [], "state": []}]
+    return g
+
+
+def test_el_hakki_kuponu_zengin_botta_alinir():
+    """Çok parası olan botun, el hakkı veren bir kuponu (Grabber, oyun kodundan +1 el) satın aldığını doğrular."""
+    g = _kupon(_durum(para=98), "v_grabber")
+    for ad, skor in (("big", 1800), ("boss", 2400)):  # kolay hedefte ek el hakkı fark yaratmaz; zor hedef seçilir
+        g["blinds"][ad]["score"] = skor
+    yontem, p, a = _karar(g)
+    assert (yontem, p) == ("buy", {"voucher": 0}) and a["karar"] == "satin_al:v_grabber"
+
+
+def test_modellenmemis_kuponu_almaz():
+    """Etkisi modellenmemiş bir kuponun (Telescope) alınmadığını doğrular."""
+    assert _karar(_kupon(_durum(para=98), "v_telescope"))[0] != "buy"
+
+
+def test_zengin_bot_gezegen_alir_ve_yeterince_gorduyse_yeniler():
+    """98 dolarla gezegenin satın alındığını; alınacak bir şey yokken ve görülmüş öğeler değerliyse yenileme yapıldığını doğrular."""
+    assert _karar(_durum(dukkan=[("c_jupiter", 3, "PLANET")], para=98))[2]["karar"] == "satin_al:c_jupiter"
+    ajan = PlanlayiciAjan(1)
+    g = _durum(dukkan=[("c_jupiter", 3, "PLANET")], para=98)
+    ajan.sec(g, {"gecerli_aksiyonlar": aksiyonlar.gecerli(g, "tam")})  # gezegeni görür (alır)
+    bos = _durum(dukkan=[("c_fool", 3, "TAROT")], para=98)
+    a = ajan.sec(bos, {"gecerli_aksiyonlar": aksiyonlar.gecerli(bos, "tam")})
+    assert aksiyonlar.komut(a)["yontem"] == "reroll" and ajan.son_aciklama["karar"] == "yenile"
+
+
+def test_yuva_doluyken_daha_iyi_jokeri_icin_takas_yapar():
+    """Joker yuvası doluyken, elde zayıf (işe yaramayan) bir joker varsa onu satıp mağazadaki iyi jokeri aldığını doğrular."""
+    g = _durum(dukkan=[("j_jolly", 4, "JOKER")], para=10)
+    zayif = lambda k: {"key": k, "set": "JOKER", "cost": {"buy": 4, "sell": 2}, "modifier": [], "state": []}
+    g["jokers"] = {"cards": [zayif("j_card_sharp")] * 5, "limit": 5, "count": 5}
+    ajan = PlanlayiciAjan(1)
+    a = ajan.sec(g, {"gecerli_aksiyonlar": aksiyonlar.gecerli(g, "tam")})
+    assert aksiyonlar.komut(a)["yontem"] == "sell" and ajan.son_aciklama["karar"].startswith("takas_sat")
+    g2 = _durum(dukkan=[("j_jolly", 4, "JOKER")], para=12)
+    g2["jokers"] = {"cards": [zayif("j_card_sharp")] * 4, "limit": 5, "count": 4}
+    ajan._takas_hedefi = "j_jolly"
+    a2 = ajan.sec(g2, {"gecerli_aksiyonlar": aksiyonlar.gecerli(g2, "tam")})
+    assert aksiyonlar.komut(a2) == {"yontem": "buy", "parametreler": {"card": 0}}

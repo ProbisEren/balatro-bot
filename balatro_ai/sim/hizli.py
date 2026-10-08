@@ -97,6 +97,7 @@ def en_iyi_oynanis(
     chipler: Sequence[int] | None = None,
     jokerler: Sequence[joker_modulu.Joker] = (),
     baglam: joker_modulu.Baglam | None = None,
+    yasak: frozenset[str] = frozenset(),
 ) -> tuple[int, tuple[int, ...]]:
     """En iyi oynanışın skorunu ve hangi kartlar (indeksler) olduğunu döndürür.
 
@@ -107,6 +108,9 @@ def en_iyi_oynanis(
     kartların seçileceği artık yalnızca chip'e değil, jokerlerin karta verdiği (chips, mult) değerlere de bağlıdır
     (ör. Walkie Talkie 4'lere +4 mult verir); bu yüzden her el türü için üç farklı kart sıralamasından aday denenir
     (chip, mult, ikisinin karması). Bu seçim sezgiseldir: skor hiçbir zaman tam motorun en iyisini aşmaz ama kaçırabilir.
+
+    `yasak`: boss yüzünden 0 puan getiren el türleri (The Eye: bu turda oynanmış türler; The Mouth: ilk türün dışındakiler).
+    Yasak türdeki oynanış 0 sayılır; hepsi yasaksa 0 puanlık bir oynanış döner.
     """
     n = len(kartlar)
     if n == 0:
@@ -147,6 +151,10 @@ def en_iyi_oynanis(
         """Bir el türü ve kart indeksi adayının skorunu hesaplayıp şu ana kadarki en iyisiyle karşılaştırır."""
         nonlocal en_skor, en_idx
         c, m = el_degerleri.get(tur) or (float(EL_TABLOSU[tur][0]), float(EL_TABLOSU[tur][1]))
+        if tur in yasak:  # boss bu türü sıfırlıyor
+            if not en_idx:
+                en_idx = idx
+            return
         if jokerler:  # kart kart, joker sırasıyla (puan.py ile aynı sıra): kart chip'i, kart başına etkiler, sonra ana aşama
             jb = replace(
                 jb0, el_turu=tur, iceren=frozenset(joker_modulu.ICEREN[tur]), oynanan_sayisi=len(idx),

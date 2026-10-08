@@ -193,3 +193,28 @@ def test_rollout_politikasi_straight_cizimi_de_onerir():
     oneriler = discard_adaylari(t, (0,))
     # 5-6-7-8 straight çizimi: K, 2, Q, A atılır (5,6,7,8 tutulur)
     assert (4, 5, 6, 7) in oneriler
+
+
+def test_eye_oynanmis_turu_sifir_sayar():
+    """The Eye'da bu turda oynanmış el türü simülatörde 0 puan getirir; farklı tür kaydedilince yasak büyür."""
+    from balatro_ai.sim.kartlar import Kart
+    from balatro_ai.sim.tur import Tur, alt_kume_skoru, oyna
+
+    el = [Kart("K", "H"), Kart("K", "S"), Kart("3", "C"), Kart("5", "H"), Kart("9", "D")]
+    t = Tur(el, [], 4, 4, 0.0, 10000.0, {}, 8, boss="The Eye", oynanan_turler=frozenset({"Pair"}))
+    assert alt_kume_skoru(t, (0, 1)) == 0  # çift zaten oynanmış
+    assert alt_kume_skoru(t, (0,)) > 0  # High Card serbest
+    oyna(t, (0,), alt_kume_skoru(t, (0,)))
+    assert t.oynanan_turler == frozenset({"Pair", "High Card"})
+
+
+def test_mouth_ilk_turun_disini_sifir_sayar():
+    """The Mouth'ta ilk oynanan türden sonra yalnızca o tür puan getirir."""
+    from balatro_ai.sim.kartlar import Kart
+    from balatro_ai.sim.tur import Tur, alt_kume_skoru, oyna
+
+    el = [Kart("K", "H"), Kart("K", "S"), Kart("3", "C"), Kart("5", "H")]
+    t = Tur(el, [], 4, 4, 0.0, 10000.0, {}, 8, boss="The Mouth")
+    oyna(t, (0, 1), alt_kume_skoru(t, (0, 1)))
+    assert t.oynanan_turler == frozenset({"Pair"})
+    assert alt_kume_skoru(t, (0,)) == 0 and t.yasak() >= {"High Card", "Flush"}
