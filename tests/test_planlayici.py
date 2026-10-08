@@ -183,3 +183,13 @@ def test_kayip_degeri_dis_bukey_yuksek_varyansi_oduller():
     yarim = tur(["S_2"], [], chips=150.0, hedef=300.0, el_hakki=0)
     yakin = tur(["S_2"], [], chips=290.0, hedef=300.0, el_hakki=0)
     assert deger(yakin) > 6 * deger(yarim)
+
+
+def test_rollout_politikasi_straight_cizimi_de_onerir():
+    """Rollout politikasının discard önerilerinde, 5 ardışık rütbenin 3+'ı varken straight çizimini (diğerlerini atmayı) da bulunduğunu doğrular."""
+    from balatro_ai.sim.tur import discard_adaylari
+
+    t = tur(["S_5", "H_6", "D_7", "C_8", "S_K", "H_2", "D_Q", "C_A"], ["H_9"] * 3)
+    oneriler = discard_adaylari(t, (0,))
+    # 5-6-7-8 straight çizimi: K, 2, Q, A atılır (5,6,7,8 tutulur)
+    assert (4, 5, 6, 7) in oneriler

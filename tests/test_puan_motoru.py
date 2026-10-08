@@ -203,16 +203,18 @@ def test_skor_asagi_yuvarlanir():
     assert (r.chips, r.mult, r.skor) == (15, 1.5, 22)
 
 
-def test_jokerler_henuz_desteklenmez():
-    """Joker verilirse motorun sessizce yanlış hesaplamak yerine hata verdiğini doğrular."""
-    with pytest.raises(NotImplementedError):
-        puan_hesapla(_cift(), jokerler=("j_joker",))
+def test_etkisi_tanimli_olmayan_joker_hata_verir():
+    """Oyundan okunup tanımlanmamış bir jokerle skor hesaplamanın sessizce yanlış sonuç vermek yerine hata verdiğini doğrular."""
+    from balatro_ai.sim.jokerler import Joker
+
+    with pytest.raises(NotImplementedError, match="j_blueprint"):
+        puan_hesapla(_cift(), jokerler=[Joker("j_blueprint")])
 
 
 def test_adim_kaydi():
     """Adım kaydı açıkken taban ve kart adımlarının kaydedildiğini doğrular."""
     r = puan_hesapla(_cift(), adim_kaydi=True)
-    assert r.adimlar[0][0].startswith("taban") and len(r.adimlar) == 3
+    assert r.adimlar[0][0].startswith("taban") and len(r.adimlar) == 4  # taban, 2 kart, jokerler
 
 
 # --- boss etkileri -----------------------------------------------------------------------------

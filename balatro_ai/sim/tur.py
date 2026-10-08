@@ -15,10 +15,11 @@ Rollout politikası (`politika`) GEÇİCİ bir tahmindir: bu bir "temel oyun" ya
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 from balatro_ai.sim.hizli import en_iyi_oynanis
-from balatro_ai.sim.kartlar import Kart
+from balatro_ai.sim.jokerler import Baglam, Joker
+from balatro_ai.sim.kartlar import RUTBE_ID, Kart
 
 KAYIP_AGIRLIK = 0.25  # tur kaybedilince değer: bu ağırlık x (ulaşılan skor / hedef); kazanma = 1.0 (+ kalan el payı)
 KAYIP_USSU = 3  # kayıp değerinde ilerleme oranının üssü: dışbükey olduğu için kazanma şansı olan yüksek varyanslı oynanışı ödüllendirir
@@ -39,12 +40,22 @@ class Tur:
     el_degerleri: dict[str, tuple[float, float]]
     el_boyu: int = 8
     tam_bes: bool = False  # The Psychic: yalnızca tam 5 kartlık oynanış puan getirir
+    jokerler: tuple[Joker, ...] = ()  # elde taşınan, etkisi tanımlı jokerler
+    baglam: Baglam = field(default_factory=Baglam)  # jokerlerin baktığı sabit bilgiler (para, el türü sayaçları); haklar ve deste burada güncellenir
+
+    def joker_baglami(self, discard_sonra: int | None = None) -> Baglam:
+        """Şu anki hak ve deste durumuna göre jokerlerin bağlamı (oynanan el düşüldükten sonraki el hakkıyla)."""
+        return replace(
+            self.baglam,
+            kalan_discard=self.kalan_discard if discard_sonra is None else discard_sonra,
+            kalan_el=max(self.kalan_el - 1, 0), deste_boyu=len(self.deste), joker_sayisi=len(self.jokerler),
+        )
 
     def kopya(self) -> Tur:
         """Durumun bağımsız bir kopyasını döndürür (rollout orijinali bozmasın)."""
         return Tur(
             list(self.el), list(self.deste), self.kalan_el, self.kalan_discard, self.chips,
-            self.hedef, self.el_degerleri, self.el_boyu, self.tam_bes,
+            self.hedef, self.el_degerleri, self.el_boyu, self.tam_bes, self.jokerler, self.baglam,
         )
 
     def chipler(self) -> list[int]:
@@ -67,7 +78,7 @@ class Tur:
 
 def en_iyi(t: Tur) -> tuple[int, tuple[int, ...]]:
     """Eldeki en iyi oynanışın skoru ve kart indeksleri; The Psychic'te oynanış 5 karta tamamlanır (skor değişmez)."""
-    skor, idx = en_iyi_oynanis(t.el, t.el_degerleri, t.chipler())
+    skor, idx = en_iyi_oynanis(t.el, t.el_degerleri, t.chipler(), t.jokerler, t.joker_baglami())
     if t.tam_bes:
         if len(t.el) < 5:
             return 0, tuple(range(len(t.el)))  # 5 kart oynanamaz: bu el sıfır puan
@@ -81,7 +92,7 @@ def alt_kume_skoru(t: Tur, idx: tuple[int, ...]) -> int:
     if t.tam_bes and len(idx) != 5:
         return 0
     secili = [t.el[i] for i in idx]
-    return en_iyi_oynanis(secili, t.el_degerleri, [k.chip for k in secili])[0]
+    return en_iyi_oynanis(secili, t.el_degerleri, [k.chip for k in secili], t.jokerler, t.joker_baglami())[0]
 
 
 def _cikar(t: Tur, idx: tuple[int, ...]) -> None:
@@ -112,6 +123,23 @@ def deger(t: Tur) -> float:
     return KAYIP_AGIRLIK * min(t.chips / t.hedef, 1.0) ** KAYIP_USSU
 
 
+def _straight_pencereleri(t: Tur) -> list[set[int]]:
+    """Elde 5 ardışık rütbenin en az 3'ü bulunan en iyi iki pencere için, her rütbeden bir kart (en yüksek chip'li) tutacak indeksler."""
+    rutbeler: dict[int, int] = {}
+    for i, k in enumerate(t.el):
+        r = RUTBE_ID[k.rutbe]
+        if r not in rutbeler or t.el[rutbeler[r]].chip < k.chip:
+            rutbeler[r] = i
+    pencereler = []
+    for alt in range(1, 11):
+        pencere = [14 if x == 1 else x for x in range(alt, alt + 5)]
+        var = [rutbeler[p] for p in pencere if p in rutbeler]
+        if len(var) >= 3:
+            pencereler.append((len(var), sum(t.el[i].chip for i in var), set(var)))
+    pencereler.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [p[2] for p in pencereler[:2]]
+
+
 def discard_adaylari(t: Tur, oynanis: tuple[int, ...]) -> list[tuple[int, ...]]:
     """Rollout politikasının değerlendireceği az sayıda, çeşitli discard önerisi (hepsi tek ölçütle elenir: beklenen skor).
 
@@ -132,6 +160,8 @@ def discard_adaylari(t: Tur, oynanis: tuple[int, ...]) -> list[tuple[int, ...]]:
     for i, k in enumerate(t.el):
         rutbe_say.setdefault(k.rutbe, []).append(i)
     ham.append([i for i in range(n) if i not in oynanis and len(rutbe_say[t.el[i].rutbe]) == 1])
+    for tutulacak in _straight_pencereleri(t):  # straight çizimi: penceredeki rütbelerden birer kart tut
+        ham.append([i for i in range(n) if i not in tutulacak])
     sirali = sorted(range(n), key=lambda i: chip[i])
     for k in (3, 4, 5):
         ham.append(sirali[:k])
@@ -164,7 +194,9 @@ def politika(t: Tur, rng: random.Random, ornek: int = 3) -> tuple[str, tuple[int
         toplam, gecen = 0.0, 0
         for o in ornekler:
             yeni = kalanlar + o[: len(atilacak)]
-            s = en_iyi_oynanis(yeni, t.el_degerleri, [k.chip for k in yeni])[0]
+            s = en_iyi_oynanis(
+                yeni, t.el_degerleri, [k.chip for k in yeni], t.jokerler, t.joker_baglami(t.kalan_discard - 1)
+            )[0]
             toplam += s
             gecen += s >= kalan
         olcut = gecen / ornek if son_el else toplam / ornek
