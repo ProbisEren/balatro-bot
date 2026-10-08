@@ -1,0 +1,24 @@
+# Claude Code (yerel kalır, repoya girmez)
+.claude/
+CLAUDE.md
+
+# Gizli bilgiler
+.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
