@@ -5,19 +5,21 @@ Sıra (oyunla aynı):
   2. Puanlayan kartlar soldan sağa. Her kart (kırmızı mühürle iki kez): kart chip'i (+ bonus, kalıcı),
      mult kartı +4 mult, glass x2, sonra baskı (foil +50 chips, holo +10 mult, polychrome x1.5).
   3. Elde kalan kartlar soldan sağa: steel x1.5 mult (kırmızı mühürle iki kez).
-  4. Jokerler soldan sağa (henüz uygulanmadı).
+  4. Jokerler soldan sağa (sim/jokerler.py: yalnızca oyundan okunup tanımlanmış olanlar; bilinmeyen joker hata verir).
   Skor = floor(chips * mult).
 
-Bu sürümde YOK: jokerler, boss blind etkileri (el/kart debuff'ı `debuff` alanıyla verilebilir), Lucky kartın
+Bu sürümde YOK: tanımsız jokerler, boss blind etkileri (el/kart debuff'ı `debuff` alanıyla verilebilir), Lucky kartın
 rastgele etkisi (kart varsa `belirsiz` doğru döner, etkisi sayılmaz), Wheel/Hook gibi rastgele etkiler.
 """
 
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, replace
 
 from balatro_ai.sim import boss as boss_kurallari
+from balatro_ai.sim import jokerler as joker_modulu
 from balatro_ai.sim.el_turu import Degerlendirme, degerlendir
 from balatro_ai.sim.kartlar import Kart
 
@@ -63,7 +65,8 @@ def puan_hesapla(
     *,
     el_degerleri: dict[str, tuple[float, float]] | None = None,
     seviyeler: dict[str, int] | None = None,
-    jokerler: tuple = (),
+    jokerler: Sequence[joker_modulu.Joker] = (),
+    baglam: joker_modulu.Baglam | None = None,
     el_debuff: bool = False,
     boss: str | None = None,
     gecmis_turler: frozenset[str] = frozenset(),
@@ -78,8 +81,18 @@ def puan_hesapla(
     `el_degerleri`: oyun durumundaki güncel (chips, mult) (`state.hands[tür]`); verilmezse `seviyeler`
     (tür -> seviye) kullanılır, o da yoksa seviye 1.
     """
-    if jokerler:
-        raise NotImplementedError("Joker etkileri henüz uygulanmadı")
+    jokerler = list(jokerler)
+    bilinmeyen = joker_modulu.bilinmeyenler(jokerler)
+    if bilinmeyen:  # etkisi oyundan okunup doğrulanmamış joker: sessizce yanlış hesaplamak yerine dur
+        raise NotImplementedError(f"Etkisi tanımlı olmayan joker: {bilinmeyen}")
+    for j in jokerler:  # el tespitini değiştiren jokerler (Four Fingers, Shortcut, Splash)
+        bayrak = joker_modulu.EL_BAYRAKLARI.get(j.key)
+        if bayrak == "dort_parmak":
+            dort_parmak = True
+        elif bayrak == "kisayol":
+            kisayol = True
+        elif bayrak == "splash":
+            splash = True
     # Boss kart debuff'ları el tespitinden ÖNCE işaretlenir (oyunda da kartlar set_debuff ile işaretlidir);
     # el türü tespiti debuff'tan bağımsızdır, yalnızca puanlama debuff'lı kartı atlar.
     oynanan = boss_kurallari.kartlara_uygula(boss, list(oynanan))
@@ -93,6 +106,10 @@ def puan_hesapla(
         c0, _, lc, lm = EL_TABLOSU[d.el_turu]
         if lc and chips > c0 + 0.5 * lc:
             chips, mult = chips - lc, max(mult - lm, 1.0)
+    jb = replace(
+        baglam or joker_modulu.Baglam(),
+        el_turu=d.el_turu, iceren=frozenset(d.iceren), oynanan_sayisi=len(oynanan), joker_sayisi=len(jokerler),
+    )
     adimlar: list[tuple[str, float, float]] = []
 
     def kayit(ad: str) -> None:
@@ -128,6 +145,7 @@ def puan_hesapla(
                 mult += 10
             elif k.baski == "polychrome":
                 mult *= 1.5
+            chips, mult = joker_modulu.kart_basina_uygula(chips, mult, k, jokerler, jb)  # jokerlerin kart başına etkisi
             kayit(f"kart {i} ({k.rutbe}{k.renk})")
     for i, k in enumerate(elde):  # elde kalan kartlar
         if k.debuff or k.gelistirme != "steel":
@@ -135,6 +153,9 @@ def puan_hesapla(
         for _ in range(2 if k.muhur == "red" else 1):
             mult *= 1.5
             kayit(f"elde {i} steel")
+    chips, mult = joker_modulu.ana_uygula(chips, mult, jokerler, jb)  # jokerlerin ana aşaması (baskı, etki, polychrome)
+    kayit("jokerler")
+    belirsiz = belirsiz or joker_modulu.belirsiz_var_mi(jokerler)
     return PuanSonucu(
         el_turu=d.el_turu,
         puanlayan=d.puanlayan,

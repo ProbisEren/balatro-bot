@@ -8,8 +8,12 @@ koşullar uymuyorsa `hizli_uygun_mu` yanlış döner ve çağıran tam motora ge
 
 from __future__ import annotations
 
+import itertools
+import math
 from collections.abc import Sequence
+from dataclasses import replace
 
+from balatro_ai.sim import jokerler as joker_modulu
 from balatro_ai.sim.kartlar import RENKLER, RUTBE_CHIP, RUTBE_ID, Kart
 from balatro_ai.sim.puan import EL_TABLOSU
 
@@ -91,11 +95,18 @@ def en_iyi_oynanis(
     kartlar: Sequence[Kart],
     el_degerleri: dict[str, tuple[float, float]],
     chipler: Sequence[int] | None = None,
+    jokerler: Sequence[joker_modulu.Joker] = (),
+    baglam: joker_modulu.Baglam | None = None,
 ) -> tuple[int, tuple[int, ...]]:
     """En iyi oynanışın skorunu ve hangi kartlar (indeksler) olduğunu döndürür.
 
     `chipler`: kart başına chip değeri (debuff'lı kart 0); verilmezse rütbeden hesaplanır. Düz kartlar için
     `en_iyi_skor` ile aynı skoru verir; fazladan, oynanacak kartları da bildirir (puanlayan kartlar).
+
+    Jokerlerle: skor puan.py ile aynı sırada (kart chip'i, kart başına joker etkileri, ana joker aşaması) hesaplanır. Hangi
+    kartların seçileceği artık yalnızca chip'e değil, jokerlerin karta verdiği (chips, mult) değerlere de bağlıdır
+    (ör. Walkie Talkie 4'lere +4 mult verir); bu yüzden her el türü için üç farklı kart sıralamasından aday denenir
+    (chip, mult, ikisinin karması). Bu seçim sezgiseldir: skor hiçbir zaman tam motorun en iyisini aşmaz ama kaçırabilir.
     """
     n = len(kartlar)
     if n == 0:
@@ -103,10 +114,31 @@ def en_iyi_oynanis(
     ids = [RUTBE_ID[k.rutbe] for k in kartlar]
     renkler = [RENK_INDEKS[k.renk] for k in kartlar]
     chip = list(chipler) if chipler is not None else [CHIP_ID[r] for r in ids]
+    jokerler = list(jokerler)
+    jb0 = baglam or joker_modulu.Baglam()
+    dc = [0.0] * n
+    dm = [0.0] * n
+    if jokerler:
+        for i, k in enumerate(kartlar):
+            dc[i], dm[i] = joker_modulu.kart_vektoru(k, jokerler, jb0)
+    # Kart sıralamaları (iyiden kötüye): jokersizde yalnızca chip; jokerlide chip, mult ve karışımı.
+    anahtarlar = [lambda i: chip[i] + dc[i]]
+    if jokerler:
+        anahtarlar += [lambda i: (dm[i], chip[i] + dc[i]), lambda i: (chip[i] + dc[i]) * (1.0 + dm[i] / 4.0)]
+
+    def en_iyiler(indeksler: Sequence[int], k: int) -> list[tuple[int, ...]]:
+        """Verilen indekslerden, her sıralamaya göre en iyi `k` kartlık farklı seçimler."""
+        sonuc: list[tuple[int, ...]] = []
+        for anahtar in anahtarlar:
+            secim = tuple(sorted(sorted(indeksler, key=anahtar, reverse=True)[:k]))
+            if secim not in sonuc:
+                sonuc.append(secim)
+        return sonuc
+
     gruplar: dict[int, list[int]] = {}
     for i, r in enumerate(ids):
         gruplar.setdefault(r, []).append(i)
-    for g in gruplar.values():  # her grupta chip'i yüksek kart önce
+    for g in gruplar.values():  # grup içinde chip'i yüksek kart önce (jokersiz yol bunu kullanır)
         g.sort(key=lambda i: chip[i], reverse=True)
 
     en_skor, en_idx = 0.0, ()
@@ -115,41 +147,77 @@ def en_iyi_oynanis(
         """Bir el türü ve kart indeksi adayının skorunu hesaplayıp şu ana kadarki en iyisiyle karşılaştırır."""
         nonlocal en_skor, en_idx
         c, m = el_degerleri.get(tur) or (float(EL_TABLOSU[tur][0]), float(EL_TABLOSU[tur][1]))
-        s = (c + sum(chip[i] for i in idx)) * m
+        if jokerler:  # kart kart, joker sırasıyla (puan.py ile aynı sıra): kart chip'i, kart başına etkiler, sonra ana aşama
+            jb = replace(
+                jb0, el_turu=tur, iceren=frozenset(joker_modulu.ICEREN[tur]), oynanan_sayisi=len(idx),
+                joker_sayisi=len(jokerler),
+            )
+            ch, mu = c, m
+            for i in sorted(idx):
+                ch += chip[i]
+                ch, mu = joker_modulu.kart_basina_uygula(ch, mu, kartlar[i], jokerler, jb)
+            ch, mu = joker_modulu.ana_uygula(ch, mu, jokerler, jb)
+            s = math.floor(ch * mu)
+        else:
+            s = (c + sum(chip[i] for i in idx)) * m
         if s > en_skor or not en_idx:
             en_skor, en_idx = s, idx
 
-    aday("High Card", (max(range(n), key=lambda i: chip[i]),))
-    ciftler = []  # (chip toplamı, indeksler)
-    ucluler = []
-    for g in gruplar.values():
+    if jokerler:  # her tek kart: jokerler karta çok farklı değer verebilir
+        for i in range(n):
+            aday("High Card", (i,))
+    else:
+        aday("High Card", (max(range(n), key=lambda i: chip[i]),))
+    gruplu = [(r, g) for r, g in gruplar.items()]
+    ciftler: list[tuple[int, tuple[int, ...]]] = []  # (rütbe, seçilen kartlar) tüm çiftler ve seçim varyantları
+    ucluler: list[tuple[int, tuple[int, ...]]] = []
+    for r, g in gruplu:
         if len(g) >= 2:
-            ciftler.append((chip[g[0]] + chip[g[1]], tuple(g[:2])))
-            aday("Pair", tuple(g[:2]))
+            for secim in en_iyiler(g, 2):
+                ciftler.append((r, secim))
+                aday("Pair", secim)
         if len(g) >= 3:
-            ucluler.append((chip[g[0]] + chip[g[1]] + chip[g[2]], tuple(g[:3])))
-            aday("Three of a Kind", tuple(g[:3]))
+            for secim in en_iyiler(g, 3):
+                ucluler.append((r, secim))
+                aday("Three of a Kind", secim)
         if len(g) >= 4:
-            aday("Four of a Kind", tuple(g[:4]))
-    ciftler.sort(reverse=True)
-    if len(ciftler) >= 2:
-        aday("Two Pair", ciftler[0][1] + ciftler[1][1])
-    if ucluler:
-        en_fh: tuple[int, tuple[int, ...]] | None = None
-        for ct, it in ucluler:
-            for cp, ip in ciftler:
-                if not set(ip) & set(it) and (en_fh is None or ct + cp > en_fh[0]):
-                    en_fh = (ct + cp, it + ip)
+            for secim in en_iyiler(g, 4):
+                aday("Four of a Kind", secim)
+    if jokerler:  # her iki çift grubu ve tüm seçim varyantları
+        for (r1, s1), (r2, s2) in itertools.combinations(ciftler, 2):
+            if r1 != r2:
+                aday("Two Pair", s1 + s2)
+        for r1, s1 in ucluler:
+            for r2, s2 in ciftler:
+                if r1 != r2:
+                    aday("Full House", s1 + s2)
+    else:
+        ciftler.sort(key=lambda x: sum(chip[i] for i in x[1]), reverse=True)
+        farkli = []
+        for r, s in ciftler:
+            if all(r != r0 for r0, _ in farkli):
+                farkli.append((r, s))
+        if len(farkli) >= 2:
+            aday("Two Pair", farkli[0][1] + farkli[1][1])
+        en_fh = None
+        for rt, st in ucluler:
+            for rp, sp in farkli:
+                if rp != rt:
+                    toplam = sum(chip[i] for i in st + sp)
+                    if en_fh is None or toplam > en_fh[0]:
+                        en_fh = (toplam, st + sp)
         if en_fh:
             aday("Full House", en_fh[1])
-    for rk in range(4):  # Flush: aynı renkli en yüksek chip'li 5 kart
-        ayni = sorted((i for i in range(n) if renkler[i] == rk), key=lambda i: chip[i], reverse=True)
+    for rk in range(4):  # Flush: aynı renkli kartlardan en iyi 5
+        ayni = [i for i in range(n) if renkler[i] == rk]
         if len(ayni) >= 5:
-            aday("Flush", tuple(ayni[:5]))
+            for secim in en_iyiler(ayni, 5):
+                aday("Flush", secim)
     for alt in range(1, 11):  # Straight / Straight Flush: 5 ardışık rütbe
         pencere = [14 if x == 1 else x for x in range(alt, alt + 5)]
         if all(p in gruplar for p in pencere):
-            aday("Straight", tuple(gruplar[p][0] for p in pencere))
+            for anahtar in anahtarlar:
+                aday("Straight", tuple(max(gruplar[p], key=anahtar) for p in pencere))
             for rk in range(4):
                 secim = []
                 for p in pencere:

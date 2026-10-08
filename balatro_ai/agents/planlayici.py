@@ -22,6 +22,9 @@ from typing import Any
 from balatro_ai.agents.greedy import GreedyAjan
 from balatro_ai.env import aksiyonlar
 from balatro_ai.sim import boss as boss_kurallari
+from balatro_ai.sim import gezegen as gezegen_modulu
+from balatro_ai.sim import jokerler as joker_modulu
+from balatro_ai.sim import magaza as magaza_modulu
 from balatro_ai.sim.hizli import en_iyi_oynanis
 from balatro_ai.sim.kartlar import RUTBE_ID, Kart, apiden
 from balatro_ai.sim.puan import EL_TABLOSU
@@ -42,12 +45,13 @@ class PlanlayiciAjan(GreedyAjan):
 
     tur = "planlayici"
 
-    def __init__(self, tohum: int, dunya: int = 32, butce_sn: float = 2.0, aday_sayisi: int = 18):
+    def __init__(self, tohum: int, dunya: int = 32, butce_sn: float = 2.0, aday_sayisi: int = 18, magaza: bool = True, joker_toplama: bool = False):
         """`dunya`: değerlendirme dünyası sayısı; `butce_sn`: karar başına rollout süre sınırı; `aday_sayisi`: rollout'a girecek aday sayısı."""
-        super().__init__(tohum, magaza=False)
+        super().__init__(tohum, magaza=magaza)
         self.dunya = dunya
         self.butce_sn = butce_sn
         self.aday_sayisi = aday_sayisi
+        self.joker_toplama = joker_toplama  # VERİ TOPLAMA modu: mağazada değerlendirmeden joker satın alır (doğrulama verisi için)
         self._izle: dict[str, Any] | None = None  # son kararın izi (gizli kart havuzunu hesaplamak için)
         self._kullanilan: set[tuple[str, str]] = set()  # bu turda oynanan/atılan, kimliği görülmüş kartlar
         self._son_el: dict[str, Any] | None = None  # son el aramasının sonucu (denetim için loga yazılır)
@@ -56,7 +60,8 @@ class PlanlayiciAjan(GreedyAjan):
         """Run kaydındaki `ajan` alanına yazılacak kimlik ve ayarlar."""
         return {
             "tur": self.tur, "model_id": None, "rng_tohumu": self.tohum, "dunya": self.dunya,
-            "butce_sn": self.butce_sn, "aday_sayisi": self.aday_sayisi,
+            "butce_sn": self.butce_sn, "aday_sayisi": self.aday_sayisi, "magaza": self.magaza,
+            "joker_toplama": self.joker_toplama, "para_degeri": magaza_modulu.PARA_DEGERI, "sonraki_blind": magaza_modulu.SONRAKI_BLIND,
         }
 
     # ------------------------------------------------------------------ gözlemden simülasyon girdileri
@@ -109,6 +114,119 @@ class PlanlayiciAjan(GreedyAjan):
             dunyalar.append((dolu, d))
         return dunyalar
 
+    @staticmethod
+    def _jokerler(g: dict[str, Any]) -> tuple[joker_modulu.Joker, ...]:
+        """Elde taşınan jokerlerin etkisi tanımlı olanları (bilinmeyenler hesapta yok sayılır, açıklamada bildirilir)."""
+        tum = [joker_modulu.apiden(c) for c in (g.get("jokers") or {}).get("cards", []) if c.get("key")]
+        return tuple(j for j in tum if joker_modulu.desteklenen_mi(j))
+
+    @staticmethod
+    def _baglam(g: dict[str, Any]) -> joker_modulu.Baglam:
+        """Jokerlerin baktığı durum bilgisi: para ve el türlerinin oynanma sayaçları (oyun durumundan)."""
+        sayaclar = {
+            t: (int(v.get("played", 0)), int(v.get("played_this_round", 0))) for t, v in (g.get("hands") or {}).items()
+        }
+        return joker_modulu.Baglam(para=int(g.get("money") or 0), sayaclar=sayaclar)
+
+    # ------------------------------------------------------------------ mağaza ve paket kararı
+    def _magaza_karari(self, g: dict[str, Any], gecerli: set[int]) -> int | None:
+        """Mağazada ve açık gezegen paketinde karar: yalnızca markette/pakette görünen öğeler arasından, her birinin sonraki
+        blind'ları geçme ihtimaline etkisini rollout ile ölçüp maliyetiyle (fiyat + kaybedilen faiz) karşılaştırır.
+
+        Şimdilik gezegenler ve etkisi `sim/jokerler.py`'de tanımlı jokerler değerlendirilir; etkisi tanımsız öğeler (diğer
+        jokerler, tarot, kupon, diğer paketler) alınmaz. None döndürmek "alma, mağazadan çık / paketi atla" demektir (sabit kural).
+        """
+        faz = g.get("state")
+        deste = [_duz(apiden(c)) for c in (g.get("cards") or {}).get("cards", [])]
+        if not deste:
+            return None
+        degerler = {t: (float(v["chips"]), float(v["mult"])) for t, v in (g.get("hands") or {}).items()}
+        hedefler = magaza_modulu.sonraki_hedefler(g.get("blinds") or {}, int(g.get("ante_num") or 1), stake=g.get("stake") or "WHITE")
+        rnd = g.get("round") or {}
+        el_hakki, discard_hakki = int(rnd.get("hands_left") or 4), int(rnd.get("discards_left") or 4)
+        el_boyu = int((g.get("hand") or {}).get("limit") or 8)
+        rng = random.Random(self._rng.random())
+        desteler = magaza_modulu.desteler_uret(deste, len(hedefler), rng)
+
+        sahip = self._jokerler(g)
+        jbaglam = self._baglam(g)
+
+        def beklenen(d: dict[str, tuple[float, float]], jk: tuple[joker_modulu.Joker, ...] | None = None) -> float:
+            """Verilen el değerleri ve jokerlerle sonraki blind'ların beklenen geçilme toplamı (jk verilmezse elde olanlar)."""
+            return magaza_modulu.beklenen_gecilen_blind(
+                desteler, d, hedefler, el_hakki, discard_hakki, el_boyu, sahip if jk is None else jk, jbaglam
+            )
+
+        taban = beklenen(degerler)
+        etki: dict[str, float] = {}
+
+        def gezegen_etkisi(anahtar: str) -> float:
+            """Gezegenin sonraki blind'ları geçme beklentisine katkısı (aynı çekilişlerle, önbellekli)."""
+            if anahtar not in etki:
+                etki[anahtar] = beklenen(gezegen_modulu.yukselt(degerler, gezegen_modulu.GEZEGEN_EL[anahtar])) - taban
+            return etki[anahtar]
+
+        aciklama: dict[str, Any] = {"hedefler": hedefler, "taban_beklenen": round(taban, 3)}
+        if faz in aksiyonlar.PAKET_FAZLARI:  # açık paket: en çok katkı veren gezegeni seç
+            adaylar = [
+                (gezegen_etkisi(c["key"]), i) for i, c in enumerate((g.get("pack") or {}).get("cards", []))
+                if c.get("key") in gezegen_modulu.GEZEGEN_EL
+            ]
+            if not adaylar:
+                return None
+            en = max(adaylar)
+            aciklama.update(karar="paketten_gezegen", etki=round(en[0], 4))
+            self.son_aciklama = aciklama
+            a = aksiyonlar._PAKET_SEC + en[1]
+            return a if a in gecerli else None
+        for i, c in enumerate((g.get("consumables") or {}).get("cards", [])):  # elde gezegen: kullan
+            if c.get("key") in gezegen_modulu.GEZEGEN_EL and aksiyonlar._KULLAN + i in gecerli:
+                aciklama["karar"] = "gezegen_kullan"
+                self.son_aciklama = aciklama
+                return aksiyonlar._KULLAN + i
+        para = int(g.get("money") or 0)
+        adaylar2: list[tuple[float, int, str]] = []  # (net değer, aksiyon, ad)
+        magaza_kartlari = (g.get("shop") or {}).get("cards", [])[: aksiyonlar.MAKS_MAGAZA_KART]
+        if self.joker_toplama:  # VERİ TOPLAMA: değerlendirmeden joker al (etkisi tanımlı olanları tercih ederek)
+            alinabilir = [
+                (joker_modulu.desteklenen_mi(joker_modulu.apiden(c)), i) for i, c in enumerate(magaza_kartlari)
+                if str(c.get("key", "")).startswith("j_") and c["cost"]["buy"] <= para and aksiyonlar._AL_KART + i in gecerli
+            ]
+            if alinabilir:
+                tercih = [i for ok, i in alinabilir if ok] or [i for _, i in alinabilir]
+                i = rng.choice(tercih)
+                aciklama.update(karar=f"veri_toplama_joker:{magaza_kartlari[i]['key']}")
+                self.son_aciklama = aciklama
+                return aksiyonlar._AL_KART + i
+        for i, c in enumerate(magaza_kartlari):  # markette görünen joker: etkisi tanımlıysa değeri hesapla
+            fiyat = c["cost"]["buy"]
+            if str(c.get("key", "")).startswith("j_") and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
+                joker = joker_modulu.apiden(c)
+                if joker_modulu.desteklenen_mi(joker):
+                    delta = beklenen(degerler, (*sahip, joker)) - taban
+                    adaylar2.append((delta - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
+        for i, c in enumerate(magaza_kartlari):
+            fiyat = c["cost"]["buy"]
+            if c.get("key") in gezegen_modulu.GEZEGEN_EL and fiyat <= para and aksiyonlar._AL_KART + i in gecerli:
+                adaylar2.append((gezegen_etkisi(c["key"]) - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_KART + i, c["key"]))
+        for i, c in enumerate((g.get("packs") or {}).get("cards", [])[: aksiyonlar.MAKS_MAGAZA_PAKET]):
+            parcalar = c.get("key", "").split("_")  # p_celestial_normal_1
+            fiyat = c["cost"]["buy"]
+            if len(parcalar) >= 3 and parcalar[1] == "celestial" and fiyat <= para and aksiyonlar._AL_PAKET + i in gecerli:
+                deltalar = {k: gezegen_etkisi(k) for k in gezegen_modulu.YAYGIN_GEZEGENLER}
+                beklenen_etki = gezegen_modulu.paket_beklenen_degeri(deltalar, parcalar[2], rng)
+                adaylar2.append((beklenen_etki - magaza_modulu.maliyet(para, fiyat), aksiyonlar._AL_PAKET + i, c["key"]))
+        aciklama["adaylar"] = [(round(v, 4), ad) for v, _, ad in sorted(adaylar2, reverse=True)[:5]]
+        if adaylar2:
+            net, a, ad = max(adaylar2)
+            if net > 0:
+                aciklama.update(karar=f"satin_al:{ad}", net=round(net, 4))
+                self.son_aciklama = aciklama
+                return a
+        aciklama["karar"] = "magazadan_cik"
+        self.son_aciklama = aciklama
+        return None
+
     # ------------------------------------------------------------------ karar
     def _el_karari(self, g: dict[str, Any], gecerli: set[int]) -> int | None:
         """SELECTING_HAND'de en iyi oynama veya atma eylemini rollout ile seçer; aksiyon kimliğini döndürür."""
@@ -133,12 +251,17 @@ class PlanlayiciAjan(GreedyAjan):
         rng = random.Random(self._rng.random())
         dunyalar = self._dunyalar(el, deste, havuz, boss, rng)
         hl, dl = int(rnd.get("hands_left", 0)), int(rnd.get("discards_left", 0))
+        jokerler = self._jokerler(g)
+        jbaglam = self._baglam(g)
         el_boyu = int((g["hand"].get("limit")) or 8)
 
         def yeni_tur(j: int) -> Tur:
             """j. dünyanın başlangıç turunu kurar."""
             dolu, d = dunyalar[j]
-            return Tur(list(dolu), list(d), hl, dl, chips, hedef, taban, el_boyu, tam_bes=boss == "The Psychic")
+            return Tur(
+                list(dolu), list(d), hl, dl, chips, hedef, taban, el_boyu, tam_bes=boss == "The Psychic",
+                jokerler=jokerler, baglam=jbaglam,
+            )
 
         kombinasyonlar = [c for c in aksiyonlar.KOMBINASYONLAR if c[-1] < n]
         self._son_el = None
@@ -234,7 +357,7 @@ class PlanlayiciAjan(GreedyAjan):
             for t in turlar:
                 k = t.kopya()
                 _cikar_ve_doldur(k, c)
-                toplam += en_iyi_oynanis(k.el, k.el_degerleri, k.chipler())[0] if k.el else 0
+                toplam += en_iyi_oynanis(k.el, k.el_degerleri, k.chipler(), k.jokerler, k.joker_baglami())[0] if k.el else 0
             pot[c] = toplam / s0
         oyun_siralama = sorted(oynanabilir, key=lambda c: imdt[c], reverse=True)
         potansiyelli = sorted(oynanabilir, key=lambda c: imdt[c] + (pot[c] if hl > 1 else 0), reverse=True)
