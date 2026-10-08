@@ -88,7 +88,12 @@ class BalatroIstemci:
         self.zaman_asimi = zaman_asimi
         self._id = itertools.count(1)
 
-    def _cagri(self, yontem: str, parametreler: dict[str, Any] | None = None) -> Any:
+    def _cagri(
+        self,
+        yontem: str,
+        parametreler: dict[str, Any] | None = None,
+        zaman_asimi: float | None = None,
+    ) -> Any:
         if yontem not in IZINLI_AKSIYONLAR and yontem not in IZINLI_OKUMALAR:
             raise IzinVerilmedi(-32003, f"'{yontem}' bu istemcide izinli değil (adil oyun kuralı)")
         govde: dict[str, Any] = {"jsonrpc": "2.0", "method": yontem, "id": next(self._id)}
@@ -101,12 +106,12 @@ class BalatroIstemci:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(istek, timeout=self.zaman_asimi) as cevap:
+            with urllib.request.urlopen(istek, timeout=zaman_asimi or self.zaman_asimi) as cevap:
                 ham = cevap.read()
         except urllib.error.URLError as e:
             raise BaglantiHatasi(f"{self.adres} adresine bağlanılamadı: {e.reason}") from e
         except TimeoutError as e:
-            raise BaglantiHatasi(f"{self.adres} zaman aşımı ({self.zaman_asimi} sn)") from e
+            raise BaglantiHatasi(f"{self.adres} zaman aşımı ({zaman_asimi or self.zaman_asimi} sn)") from e
         try:
             veri = json.loads(ham)
         except json.JSONDecodeError as e:
@@ -122,6 +127,17 @@ class BalatroIstemci:
         if "result" not in veri:
             raise ProtokolHatasi("Cevapta ne 'result' ne 'error' var")
         return veri["result"]
+
+    def komut(
+        self,
+        yontem: str,
+        parametreler: dict[str, Any] | None = None,
+        zaman_asimi: float | None = None,
+    ) -> dict[str, Any]:
+        """Beyaz listedeki bir aksiyonu ham biçimde gönderir (ortam ve logger bunu kullanır)."""
+        if yontem not in IZINLI_AKSIYONLAR:
+            raise IzinVerilmedi(-32003, f"'{yontem}' bir oyun aksiyonu olarak izinli değil")
+        return self._cagri(yontem, parametreler or None, zaman_asimi)
 
     # --- okuma ---
     def saglik(self) -> bool:

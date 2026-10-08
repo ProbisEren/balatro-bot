@@ -1,0 +1,14 @@
+--- a/src/lua/endpoints/start.lua	2026-10-08 16:30:38
++++ b/src/lua/endpoints/start.lua	2026-10-08 16:30:38
+@@ -113,7 +113,10 @@
+         if deck_data.name == deck_name then
+           sendDebugMessage("Setting deck to: " .. deck_data.name .. " (from enum: " .. args.deck .. ")", "BB.ENDPOINTS")
+           G.GAME.selected_back:change_to(deck_data)
+-          G.GAME.viewed_back:change_to(deck_data)
++          -- yama: oyun bittikten sonra viewed_back nil olabiliyor (yalnızca arayüz önizlemesi)
++          if G.GAME.viewed_back then
++            G.GAME.viewed_back:change_to(deck_data)
++          end
+           deck_found = true
+           break
+         end
